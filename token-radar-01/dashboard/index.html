@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch Radar: pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- data.js, written by main.ts beside this folder, carries the sealed snapshot and board.json's rows.
+     model.js prices every row and plan.js plans its farm; main.ts runs those same two files to write
+     board.json. radar.js draws the board, its filters and each protocol's detail view. -->
+<main id="app"><p class="boot">Launch Radar has no data yet. Run <code>node main.ts</code>, then open <code>dashboard/index.html</code> in its output folder.</p></main>
+<script src="../data.js"></script>
+<script src="model.js"></script>
+<script src="plan.js"></script>
+<script src="radar.js"></script>
+</body>
+</html>

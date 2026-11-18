@@ -1,0 +1,7 @@
+# main.ts's output is rebuilt by one command; only the board it writes is kept for reference
+out/*
+!out/board.json
+# the kit and the transcripts bundle are fetched or made at submission, never committed
+token-radar-01-kit/
+transcripts.tar.gz
+wallet.json
