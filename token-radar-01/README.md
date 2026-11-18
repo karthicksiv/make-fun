@@ -12,7 +12,7 @@ A token launch radar for make.fun's [Build the best token launch radar](https://
 
 Which pre-token protocol is worth farming next, and what to do about it.
 
-- **198 protocols ranked**: all 40 on the house watchlist, 20 more above the $50M floor that the list leaves out, and 138 early ones below it. The 416 protocols that already record a token and the 144 bridged, staked, custodied or versioned products are kept apart, each with its reason.
+- **198 protocols ranked**: all 40 on the house watchlist, 20 more above the $50M floor that the list leaves out, and 138 early ones below it. The 416 protocols that already record a token are kept apart, and so are 144 forms of tokens that already trade, each with its reason: 43 bridges, 43 staked forms, 42 exchange custody balances, 11 versions and 5 wrapped or staked products. They are told by DefiLlama's category or by a word in the name; no protocol is named in the code.
 - **An implied value that comes from the snapshot alone**: `sizeCurve(TVL x growthCarry(7-day change)) x launchOdds(days with no token, category)`. No protocol is priced by its name.
 - **A farm plan per row**: six steps with cost and time, a hold length solved from the row's own figures, and a verdict net of fees and of the T-bill yield the deposit gives up.
 
@@ -46,13 +46,13 @@ At $1,000 a protocol the radar finds 21 farms, 18 thin and 159 skips. The large 
 
 Static, no framework, no network. It is a terminal: a dark screen, one self-hosted monospace face (IBM Plex Mono, under the SIL Open Font License in `licenses/`), one green, and a status line that says what is shown and which keys drive it. One board, one sentence on what it is, and everything else a keystroke or a click away.
 
-- **Readout**: three lines above the board: coverage, the one line every row is priced by, and the farms to run next.
-- **Evidence strip**: under the readout, both fits drawn on the snapshot (market cap on TVL with the fitted curve and its P25 to P75 band; the share of protocols recording a token, by age) beside the held-out table: each pricing rule's typical miss on tokens its fit never saw, the model's row lit.
-- **Board**: sort by any column; filter by list, verdict, chain or search. A filtered board says what farming everything shown would net.
+- **Readout**: four lines above the board. Coverage, with a meter: all 758 protocols placed, 198 ranked, 416 that already trade, 144 set aside. The largest forms never ranked, by name (exchange balances, bridges and staked forms of tokens that trade). The one line every row is priced by. The farms to run next.
+- **Evidence**: beside the board on a wide screen, in a strip above it on a narrower one: both fits drawn on the snapshot (market cap on TVL with the fitted curve and its P25 to P75 band; the share of protocols recording a token, by age) beside the held-out table: each pricing rule's typical miss on tokens its fit never saw, the model's row lit.
+- **Board**: each row carries its value over its P25 to P75 range and its plan: verdict, net, fees, minutes of work, the play, the chain and the hold. Sort by any column; filter by list, verdict, chain or search. A filtered board says what farming everything shown would net.
 - **What if**: change the deposit, the share of the token that goes to farmers, or the T-bill yield, and all 198 plans and verdicts re-solve in place. Export the rows shown as CSV.
 - **Keyboard**: `j`/`k` or the arrows move the cursor, `enter` opens its row, `/` searches, `esc` closes; with a row open, `j`/`k` step to the next one.
 - **Detail**: open any row for how its value is built, its farm plan step by step, the plan's ledger, and where the protocol sits on both fits.
-- **Any width**: a narrower window gives up the least-needed things first (the bands and the tests pane, then two columns, then the strip); nothing scrolls sideways from a 360px phone up.
+- **Any width**: a narrower window gives up the least-needed things first (the evidence moves above the board, then the tests pane, two columns and the strip go); nothing scrolls sideways from a 360px phone to a 1920px desk.
 - **Already trade / Set aside**: the protocols that are never ranked, each with its reason.
 - **Model**: the three steps with their fitted figures, both fits drawn on the snapshot, the held-out tests and the farm assumptions.
 

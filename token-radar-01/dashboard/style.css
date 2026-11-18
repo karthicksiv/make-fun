@@ -12,7 +12,7 @@
 html { scrollbar-color: var(--rule) var(--screen); }
 body { margin: 0; background: var(--screen); color: var(--ink); font: 12.5px/1.5 var(--mono); -webkit-font-smoothing: antialiased; caret-color: var(--green); }
 ::selection { background: var(--green); color: var(--screen); }
-#app { max-width: 1280px; margin: 0 auto; padding: 0 20px; } .boot { padding: 64px 0; }
+#app { max-width: 1480px; margin: 0 auto; padding: 0 20px; } .boot { padding: 64px 0; }
 h1, h2, h3, p, ol { margin: 0; padding: 0; } button, input, select { font: inherit; color: inherit; }
 button { padding: 0; border: 0; background: none; cursor: pointer; } code { font: inherit; }
 small { display: block; color: var(--soft); font-size: 11.5px; }
@@ -30,18 +30,28 @@ small { display: block; color: var(--soft); font-size: 11.5px; }
 .top nav button:hover { color: var(--ink); } .top nav .on { border-color: var(--green); color: var(--ink); }
 .meta { color: var(--soft); white-space: nowrap; }
 
-/* the readout: what the board covers, how it prices, how that held up, what to farm */
-.lead { padding: 14px 0 8px; } h2 { font-size: 16px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 10px 0 0; }
+/* the readout: every protocol placed, the forms never ranked, the pricing line, what to farm */
+.lead { padding: 12px 0 6px; } h2 { font-size: 16px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 8px 0 0; }
 dt { color: var(--green); } dd { margin: 0; color: var(--soft); } dd b, dd code { color: var(--ink); font-weight: 500; }
-dd .link { margin-left: 16px; } dd .link + span { margin-left: 2px; } dd .link:first-child { margin-left: 0; color: var(--ink); }
+dd .link { margin-left: 16px; } dd .link + span { margin-left: 2px; } dd .link:first-child { margin-left: 0; color: var(--ink); } dd .more { margin: 0; }
+.meter { display: inline-flex; width: 132px; height: 6px; margin-right: 12px; vertical-align: 1px; } .meter i { margin-right: 1px; } .meter .aside { background: var(--rule); }
+.meter .pre { background: var(--green); } .meter .token { background: #66717c; }
 
-/* the evidence strip: both fits drawn and their held-out tests, three panes parted by hairlines */
-.proof { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 40px; margin-top: 4px; padding: 9px 0 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+/* the board, and the evidence: beside it as a rail on a wide screen, above it as a strip on a narrower one.
+   Three panes parted by hairlines: both fits drawn on the snapshot, and the held-out tests. */
+.deck { display: grid; grid-template-columns: minmax(0, 1fr); }
+.proof { order: -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 40px; margin-bottom: 6px; padding: 9px 0 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .proof > div { position: relative; min-width: 0; } .proof > div + div::before { content: ''; position: absolute; top: -9px; bottom: -8px; left: -20px; border-left: 1px solid var(--line); }
 .proof h3 { margin: 0 0 3px; font-size: 12.5px; font-weight: 500; } .proof h3 i { color: var(--green); font-style: normal; }
-.proof h3 small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .proof .chart text { font-size: 9.5px; }
-.proof .tests th { padding: 0 0 3px; } .proof .tests td { padding: 1px 10px 1px 0; font-size: 12px; } .proof .legend { font-size: 11px; line-height: 1.4; }
+.proof h3 small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .proof .chart text { font-size: 7px; }
+.proof .tests th { padding: 0 0 3px; } .proof .tests th + th { padding-left: 10px; } .proof .tests td { padding: 1px 10px 1px 0; font-size: 12px; } .proof .legend { font-size: 11px; line-height: 1.4; }
+@media (min-width: 1400px) {
+  .deck { grid-template-columns: minmax(0, 1fr) 272px; gap: 0 20px; align-items: start; }
+  .proof { order: 0; position: sticky; top: 0; display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0 0 0 20px; border: 0; border-left: 1px solid var(--line); }
+  .proof > div { padding: 9px 0 10px; border-top: 1px solid var(--line); } .proof > div + div::before { display: none; } .proof > div:last-child { order: -1; padding-top: 6px; border: 0; }
+  .proof h3 { flex-wrap: wrap; gap: 0 10px; } .proof h3 small { flex-basis: 100%; white-space: normal; } .proof .tests td { padding-right: 6px; font-size: 11.5px; } .proof .tests td:last-child { padding-right: 0; } .proof .tests th { letter-spacing: 0; } .proof .chart text { font-size: 9.5px; }
+}
 
 /* filters and the what-if row */
 .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; }
@@ -53,7 +63,7 @@ dd .link { margin-left: 16px; } dd .link + span { margin-left: 2px; } dd .link:f
 .seg .on, .seg .on:hover { background: var(--ink); color: var(--screen); font-weight: 500; }
 label { display: inline-flex; align-items: center; gap: 8px; color: var(--soft); white-space: nowrap; }
 .what { gap: 8px 20px; padding-top: 0; } .what b { color: var(--green); font-weight: 400; } .what .ghost { margin-left: auto; }
-.note { max-width: 110ch; padding: 14px 0 20px; color: var(--soft); font-size: 11.5px; }
+.note { max-width: 110ch; padding: 14px 0 20px; color: var(--soft); font-size: 11.5px; } .first { padding: 0 0 8px; }
 
 /* the board */
 table { width: 100%; border-collapse: collapse; }
@@ -64,9 +74,10 @@ td { padding: 4px 6px; border-bottom: 1px solid var(--line); } td:first-child { 
 .num { text-align: right; white-space: nowrap; } .empty { padding: 40px 0; color: var(--soft); text-align: center; }
 tbody tr[data-open] { cursor: pointer; } tbody tr[data-open]:hover, tr.cur { background: var(--raised); } tr.cur td:first-child { color: var(--green); }
 .name { font-weight: 600; text-align: left; } .name + i { margin-left: 10px; color: var(--soft); font-size: 11.5px; font-style: normal; } .name + .watch { color: var(--green); }
-.val { white-space: nowrap; } .val > b { display: inline-block; min-width: 54px; font-weight: 600; } .fees { color: var(--soft); }
+.val { white-space: nowrap; } .val > b { display: inline-block; min-width: 54px; font-weight: 600; } .cost { color: var(--soft); } .cost i { font-style: normal; }
 .farm { white-space: nowrap; } .farm small { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
-.band { position: relative; display: inline-block; width: 72px; height: 4px; margin-left: 8px; background: var(--line); vertical-align: 3px; }
+.band { position: relative; display: none; width: 72px; height: 4px; margin-left: 8px; background: var(--line); vertical-align: 3px; }
+@media (min-width: 1240px) and (max-width: 1399px), (min-width: 1620px) { .band { display: inline-block; } }
 .band i { position: absolute; top: 0; bottom: 0; background: var(--green-dim); } .band b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--green); }
 
 /* the status line */
@@ -94,7 +105,7 @@ h3 { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; font-siz
 .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; } .charts .chart { height: 92px; } .charts .legend { font-size: 11px; line-height: 1.4; }
 
 /* charts and the model page */
-.chart { display: block; width: 100%; } .chart text { font: 8.5px var(--mono); fill: var(--soft); text-anchor: middle; } .chart .left { text-anchor: end; }
+.chart { display: block; width: 100%; } .chart text { font: 8.5px var(--mono); fill: var(--soft); text-anchor: middle; } .chart .left { text-anchor: end; } .chart .key { text-anchor: start; }
 .grid { stroke: var(--line); } .token { fill: #66717c; } .pre { fill: var(--green); } .bar { fill: var(--green-dim); opacity: 0.55; } .bandfill { fill: var(--green); opacity: 0.1; }
 .chart .curve { fill: none; stroke: var(--ink); stroke-width: 1.4; } .drop { stroke: var(--flag); stroke-dasharray: 2 2; }
 .focus { fill: var(--flag); stroke: var(--screen); stroke-width: 1.5; } .ring { fill: var(--screen); stroke: var(--flag); stroke-width: 1.8; }
@@ -105,19 +116,21 @@ h3 { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; font-siz
 .tests .used td { color: var(--green); font-weight: 600; }
 
 /* narrower windows give up the least-needed things first: bands and the tests pane, then two columns, then the strip */
+@media (max-width: 1180px) { .cost i { display: none; } }
 @media (max-width: 1100px) {
-  .band, .fees, .proof > div:last-child { display: none; } .proof { grid-template-columns: 1fr 1fr; }
+  .proof > div:last-child { display: none; } .proof { grid-template-columns: 1fr 1fr; }
   td:nth-child(-n + 2), td:nth-child(-n + 2) small { white-space: normal; }
 }
-@media (max-width: 960px) { .mid, .meta { display: none; } }
-@media (max-width: 760px) {
+@media (max-width: 1023px) { .mid { display: none; } }
+@media (max-width: 960px) { .meta { display: none; } }
+@media (max-width: 900px) {
   #app { padding: 0 14px; } #status { margin: 0 -14px; padding: 6px 14px; }
-  .wide, .keys, .seal, .proof, dt, dd:nth-of-type(n + 2) { display: none; } dl { display: block; }
+  .wide, .keys, .seal, .proof, .cost i, dt, dd:nth-of-type(n + 2) { display: none; } dl { display: block; }
   .top { gap: 18px; overflow-x: auto; } .top nav { gap: 16px; } .lead { padding: 16px 0 6px; }
   .tools input { flex: 1; } .what { gap: 8px 14px; } .detail { padding: 12px 14px 24px; border: 0; }
   .ladder { gap: 10px; } .econ, .charts, .model { gap: 18px; } .model { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
-  #app { padding: 0 10px; } #status { margin: 0 -10px; padding: 6px 10px; } td { padding: 4px 3px; } td small { white-space: normal; } .val > b { min-width: 0; } .name + i, .farm small, .tok { display: none; }
+  #app { padding: 0 10px; } #status { margin: 0 -10px; padding: 6px 10px; } td { padding: 4px 3px; } td small { white-space: normal; } .val > b { min-width: 0; } .name + i, .farm small, .cost, .tok { display: none; }
   .ladder { grid-template-columns: 1fr 1fr; } .econ, .charts { grid-template-columns: 1fr; }
 }

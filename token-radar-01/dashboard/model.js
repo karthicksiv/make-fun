@@ -1,12 +1,21 @@
 // model.js: the whole value model, in the order a row is priced. main.ts runs this file to write
 // board.json and the page runs the same file on the same snapshot, so no figure on screen is typed in:
-// each is fitted on, or read from, the snapshot's ten fields. No protocol is priced by its name; a name
-// is only tested for the house's stand-alone words (wrapped, staked, a version marker, an exchange).
+// each is fitted on, or read from, the snapshot's ten fields. No protocol is named anywhere in this file.
 //
 //   implied value = sizeCurve(TVL x growthCarry(7-day change)) x launchOdds(days with no token, category)
 
-const DERIVED = /^(Bridge|Canonical Bridge|Liquid Staking|Liquid Restaking|Restaked BTC|CEX)$/;
-const NOT_ALONE = /\s(V\d+(\.\d+)?|\d+\.\d+)$|\b(wrapped|staked|staking)\b|^(Binance|Coinbase|Bybit|Kraken|Bitget|OKX|Bitfinex|Gemini)/i;
+// Never ranked, each with its reason: forms of a token that already trades, which launch no token of
+// their own. Told by DefiLlama's category, else by a version marker or a word in the name.
+const DERIVED = [
+  [/^(Bridge|Canonical Bridge)$/, 'a bridge: it carries tokens that already trade'],
+  [/^(Liquid Staking|Liquid Restaking|Restaked BTC)$/, 'a staked form of a token that already trades'],
+  [/^CEX$/, 'an exchange custody balance, not a protocol'],
+];
+const NOT_ALONE = [
+  [/\s(V\d+(\.\d+)?|\d+\.\d+)$/, 'one version of a protocol, not a launch of its own'],
+  [/\b(wrapped|staked|staking)\b/i, 'a wrapped or staked product, not a protocol of its own'],
+];
+const setAside = (p) => (DERIVED.find(([rx]) => rx.test(p.category || '')) || NOT_ALONE.find(([rx]) => rx.test(p.name)) || [])[1] || null;
 const FAMILIES = [
   ['Lending', /lend|cdp|collateral/i],
   ['Trading', /dex|deriv|option|predict|synth|otc|nft|launchpad|liquidity/i],
@@ -28,9 +37,7 @@ const familyOf = (category) => (FAMILIES.find(([, rx]) => rx.test(category || ''
 function classify(snap) {
   const day = (d) => Date.parse(d + 'T00:00:00Z') / 864e5, now = day(snap.as_of), watch = new Set(snap.watchlist);
   const rows = snap.protocols.map((p) => {
-    const token = p.gecko_id !== null || p.symbol !== null;
-    const why = DERIVED.test(p.category || '') ? 'a bridged, staked or custodied form of a token that trades'
-      : NOT_ALONE.test(p.name) ? 'a version, wrapper or exchange product, not a protocol of its own' : null;
+    const token = p.gecko_id !== null || p.symbol !== null, why = setAside(p);
     return {
       slug: p.slug, name: p.name, cat: p.category || 'Uncategorised', family: familyOf(p.category), chains: p.chains,
       tvl: p.tvl_usd, chg: p.change_7d, age: p.listed_at ? now - day(p.listed_at) : null,
@@ -131,9 +138,9 @@ function heldOut(rows, tokens, drift) {
     within3: model.each.filter((e) => Math.abs(e) < log(3)).length / tokens.length,
     band: [0.1, 0.25, 0.75, 0.9].map((q) => quantile(model.each, q)), // the model's own held-out misses
     tests: [
-      row('flat cap / TVL multiple', score(tokens, flatErr)),
+      row('flat TVL multiple', score(tokens, flatErr)),
       row('size curve on TVL', score(tokens, curveErr())),
-      row('+ 7-day carry = model', model, true),
+      row('+ 7d carry = model', model, true),
       row('+ listing age', score(carried, curveErr((t) => log(t.r.aged)))),
       row('+ chain count', score(carried, curveErr((t) => log(t.r.chains.length || 1)))),
     ],

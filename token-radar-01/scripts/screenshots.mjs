@@ -17,7 +17,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const snapshot = resolve(process.argv[2] ?? 'input/snapshot.json');
 const out = join(root, 'out'), shots = join(root, 'screenshots');
 const SHOTS = [
-  { name: '1-board.png', width: 1280, height: 800, scale: 1.125, hash: '' },
+  { name: '1-board.png', width: 1440, height: 900, scale: 1, hash: '' },
   { name: '2-detail.png', width: 640, height: 800, scale: 1.25, hash: process.argv[3] ?? 'open=mezzanine' },
   { name: '3-filtered.png', width: 640, height: 800, scale: 1.25, hash: process.argv[4] ?? 'verdict=Farm&sort=net&dir=-1' },
 ];

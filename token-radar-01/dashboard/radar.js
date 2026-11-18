@@ -1,10 +1,6 @@
-// radar.js: the page. It prices the snapshot with model.js, plans each farm with plan.js, and draws:
-//   the evidence   both fits drawn on the snapshot, beside their held-out tests
-//   the board      every column sorts; filters by list, verdict, chain and search; j/k, enter, / and esc
-//   what-if        deposit, airdrop share and T-bill yield re-plan all rows live; the rows shown export as CSV
-//   a detail view  per protocol: how its value is built, its costed steps and ledger, both fits
-//   three more tabs: tokens that already trade, protocols set aside and why, the model's tests
-// Nothing here holds a value: every figure is computed in the browser from data.js's snapshot.
+// radar.js: the page. It prices the snapshot with model.js, plans each farm with plan.js, and draws the
+// readout, the board with the evidence beside it, the what-if row, a detail view per protocol and three
+// more tabs. Nothing here holds a value: every figure is computed in the browser from data.js's snapshot.
 const DATA = window.RADAR_DATA, app = document.getElementById('app');
 const radar = DATA && buildRadar(DATA.snapshot), M = radar && radar.model, CHECK = M && M.check;
 const state = { tab: 'pre', scope: 'all', verdict: 'any', chain: '', q: '', sort: 'rank', dir: 1, deposit: DEFAULTS.deposit, share: DEFAULTS.share, hurdle: HURDLE, open: '' };
@@ -34,18 +30,8 @@ function selfCheck() {
   return { same, ok: same === DATA.board.length && same === radar.board.length };
 }
 
-// ---------------------------------------------------------------- state, filters, sorting, export
+// ---------------------------------------------------------------- filters, sorting, the board
 
-function readHash() {
-  Object.assign(state, INITIAL);
-  for (const [k, v] of new URLSearchParams(location.hash.slice(1))) if (k in state) state[k] = typeof INITIAL[k] === 'number' ? +v : v;
-}
-function setState(patch) {
-  Object.assign(state, patch);
-  const changed = Object.keys(state).filter((k) => state[k] !== INITIAL[k]).map((k) => k + '=' + encodeURIComponent(state[k]));
-  history.replaceState(null, '', '#' + changed.join('&'));
-  render();
-}
 function filterRows() {
   const q = state.q.trim().toLowerCase(), text = (r) => (r.name + ' ' + r.cat + ' ' + r.chains.join(' ') + ' ' + (r.symbol || '')).toLowerCase();
   if (state.tab !== 'pre') return radar[state.tab].filter((r) => !q || text(r).includes(q));
@@ -54,29 +40,20 @@ function filterRows() {
     (!state.chain || r.chains.includes(state.chain)) && (!q || text(r).includes(q)));
 }
 function sortRows(rows, cols) {
-  const col = cols.find((c) => c.key === state.sort) || cols[0];
-  return rows.sort((p, q) => { const a = col.val(p), b = col.val(q); return (a < b ? -1 : a > b ? 1 : 0) * state.dir || p.tvl - q.tvl; });
+  // a tab with no column of the chosen key opens on its largest protocols
+  const own = cols.find((c) => c.key === state.sort), col = own || cols.find((c) => c.key === 'tvl'), dir = own ? state.dir : -1;
+  return rows.sort((p, q) => { const a = col.val(p), b = col.val(q); return (a < b ? -1 : a > b ? 1 : 0) * dir || p.tvl - q.tvl; });
 }
-/** Download the rows shown as CSV: every figure of the board and of each plan, at the what-if settings. */
-function exportCsv() {
-  const quote = (v) => (/[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v), head = 'rank,slug,name,category,chains,tvl_usd,change_7d,days_no_token,if_launched_usd,launch_odds,implied_value_usd,p25_usd,p75_usd,verdict,net_usd,hold_days,fees_usd,minutes,farm_chain';
-  const lines = sortRows(filterRows(), BOARD_COLUMNS).map((r) => [r.rank, r.slug, r.name, r.cat, r.chains.join(' '), r.tvl, r.chg, r.age, Math.round(r.ifLaunched), r.odds.toFixed(4), r.value, Math.round(r.p25), Math.round(r.p75), r.plan.verdict, r.plan.net.toFixed(2), r.plan.hold, r.plan.fees.toFixed(2), r.plan.minutes, r.plan.chain].map(quote).join(','));
-  const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([[head, ...lines].join('\n')], { type: 'text/csv' })), download: `launch-radar-${DATA.snapshot.as_of}.csv` });
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-// ---------------------------------------------------------------- the board
-
 const LO = radar && Math.log10(Math.min(...radar.board.map((r) => r.p25))), HI = radar && Math.log10(Math.max(...radar.board.map((r) => r.p75)));
 const axis = (v) => ((Math.log10(v) - LO) / (HI - LO)) * 100;
 const chainsOf = (r) => esc(r.chains[0] || 'own chain') + (r.chains.length > 1 ? ` +${r.chains.length - 1}` : '');
 const nameCell = (r) => `<button class='name' data-open='${r.slug}'>${esc(r.name)}</button>${r.kind === 'pre' ? `<i class='${scopeOf(r)}'>${SCOPES[scopeOf(r)].toLowerCase()}</i>` : ''}<small>${esc(r.cat)} · ${chainsOf(r)}</small>`;
 // a week more than 10 points away from the market's median week is the only one coloured
 const changeCell = (r) => (r.chg === null ? '–' : `<span class='${r.chg - M.drift > 10 ? 'up' : r.chg - M.drift < -10 ? 'down' : ''}'>${r.chg > 0 ? '+' : ''}${Math.abs(r.chg) > 999 ? Math.round(r.chg / 100) + '×' : r.chg.toFixed(1) + '%'}</span>`);
-// the implied value, and its P25-P75 band on one log axis shared by every row
-const valueCell = (r) => `<b>${usd(r.implied)}</b><span class='band'><i style='left:${axis(r.p25)}%;width:${axis(r.p75) - axis(r.p25)}%'></i><b style='left:${axis(r.implied)}%'></b></span>`;
-const farmCell = (r) => `<b class='${r.plan.verdict}'>${r.plan.verdict}</b> ${signed(r.plan.net)}<span class='wide fees'> · ${usd(r.plan.fees)} fees</span><small>${r.plan.play} · ${esc(r.plan.chain)} · ${r.plan.hold}d</small>`;
+// the implied value over its P25-P75 range, from the model's own held-out misses
+const valueCell = (r) => `<b>${usd(r.implied)}</b><span class='band'><i style='left:${axis(r.p25)}%;width:${axis(r.p75) - axis(r.p25)}%'></i><b style='left:${axis(r.implied)}%'></b></span><small>${usd(r.p25)}–${usd(r.p75)}</small>`;
+// the plan: verdict and net, its cost in fees and minutes, then how, where and how long
+const farmCell = (r) => `<b class='${r.plan.verdict}'>${r.plan.verdict}</b> ${signed(r.plan.net)}<span class='cost'> · ${usd(r.plan.fees)}<i> fees</i> · ${r.plan.minutes} min</span><small>${r.plan.play} · ${esc(r.plan.chain)} · ${r.plan.hold}d</small>`;
 
 const BOARD_COLUMNS = [
   { key: 'rank', label: '#', val: (r) => r.rank, cell: (r) => r.rank },
@@ -86,8 +63,8 @@ const BOARD_COLUMNS = [
   { key: 'age', label: 'No token', cls: 'num wide', tip: 'How long DefiLlama has tracked it with no token recorded', val: (r) => r.aged, cell: (r) => span(r.age) },
   { key: 'ifLaunched', label: 'If launched', cls: 'num wide mid', tip: 'sizeCurve on its carried TVL', val: (r) => r.ifLaunched, cell: (r) => usd(r.ifLaunched) },
   { key: 'odds', label: 'Odds', cls: 'num wide mid', tip: 'launchOdds: a look-alike records a token within two years', val: (r) => r.odds, cell: (r) => pct(r.odds) },
-  { key: 'implied', label: 'Implied value', cls: 'val', tip: 'If launched × odds, with its P25–P75 band', val: (r) => r.implied, cell: valueCell },
-  { key: 'net', label: 'Farm plan', cls: 'farm', tip: 'Expected airdrop slice less fees and T-bill yield given up', val: (r) => r.plan.net, cell: farmCell },
+  { key: 'implied', label: 'Implied value', cls: 'val', tip: 'If launched × odds, over its P25–P75 range', val: (r) => r.implied, cell: valueCell },
+  { key: 'net', label: 'Farm plan', cls: 'farm', tip: 'Net of fees and T-bill yield given up; then its fees and minutes of work', val: (r) => r.plan.net, cell: farmCell },
 ];
 
 /** A sortable table: a click on a heading sorts by it, a click on a board row opens its detail view. */
@@ -103,6 +80,25 @@ function moveCursor(to, scroll) {
   cursor = Math.max(0, Math.min(rows.length - 1, to));
   rows.forEach((tr, i) => tr.classList.toggle('cur', i === cursor));
   if (scroll && rows[cursor]) rows[cursor].scrollIntoView({ block: 'nearest' });
+}
+/** Download the rows shown as CSV: every figure of the board and of each plan, at the what-if settings. */
+function exportCsv() {
+  const quote = (v) => (/[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v), head = 'rank,slug,name,category,chains,tvl_usd,change_7d,days_no_token,if_launched_usd,launch_odds,implied_value_usd,p25_usd,p75_usd,verdict,net_usd,hold_days,fees_usd,minutes,farm_chain';
+  const lines = sortRows(filterRows(), BOARD_COLUMNS).map((r) => [r.rank, r.slug, r.name, r.cat, r.chains.join(' '), r.tvl, r.chg, r.age, Math.round(r.ifLaunched), r.odds.toFixed(4), r.value, Math.round(r.p25), Math.round(r.p75), r.plan.verdict, r.plan.net.toFixed(2), r.plan.hold, r.plan.fees.toFixed(2), r.plan.minutes, r.plan.chain].map(quote).join(','));
+  const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([[head, ...lines].join('\n')], { type: 'text/csv' })), download: `launch-radar-${DATA.snapshot.as_of}.csv` });
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+/** The page's state lives in the URL's #hash, so every view (a filter, a sort, an open protocol) is a link. */
+function readHash() {
+  Object.assign(state, INITIAL);
+  for (const [k, v] of new URLSearchParams(location.hash.slice(1))) if (k in state) state[k] = typeof INITIAL[k] === 'number' ? +v : v;
+}
+function setState(patch) {
+  Object.assign(state, patch);
+  const changed = Object.keys(state).filter((k) => state[k] !== INITIAL[k]).map((k) => k + '=' + encodeURIComponent(state[k]));
+  history.replaceState(null, '', '#' + changed.join('&'));
+  render();
 }
 
 /** A segmented control: one button per option, the chosen one lit; a click sets state[key]. */
@@ -134,9 +130,9 @@ function renderRows() {
   const all = radar[state.tab === 'pre' ? 'board' : state.tab].length, sum = (key) => rows.reduce((n, r) => n + r.plan[key], 0);
   const basket = state.tab === 'pre' && rows.length > 0 && rows.length < all ? ` · farming all ${rows.length} at ${cash(state.deposit)} each nets <b>${signed(sum('net'))}</b> for ${Math.round(sum('minutes') / 60)} h of work` : '';
   const note = state.tab === 'traded' ? 'A token already trades for these, so they are never ranked. Those with a market cap that stand alone are what the size curve is fitted on.'
-    : state.tab === 'aside' ? 'These record no token but are not a launch of their own, so they are never ranked.'
+    : state.tab === 'aside' ? `These record no token, but each is a form of one that already trades and launches none of its own, so they are never ranked: ${forms()}.`
     : `Farm: the expected slice clears the plan's fees and the ${pct(state.hurdle)} T-bill yield its deposit gives up. Thin: it clears the fees only. An implied value is this radar's estimate, not a forecast that a token launches.`;
-  document.getElementById('rows').innerHTML = `${table(cols, rows)}<p class='note'>${note}</p>`;
+  document.getElementById('rows').innerHTML = state.tab === 'pre' ? `${table(cols, rows)}<p class='note'>${note}</p>` : `<p class='note first'>${note}</p>${table(cols, rows)}`;
   statusLine(`${rows.length === all ? all : `${rows.length} of ${all}`} protocols${basket}`);
   moveCursor(cursor);
 }
@@ -185,28 +181,35 @@ function topBar() {
     <p class='meta'>DefiLlama snapshot ${DATA.snapshot.as_of}</p></header>`;
 }
 
-/** The readout above the board: coverage, the one line every row is priced by, and the farms to run next. */
+/** The set-aside protocols counted by form, from the reason classify gave each. */
+const FORMS = [['exchange', 'exchange balances'], ['bridge', 'bridges'], ['staked form', 'staked forms'], ['version', 'versions'], ['wrapped', 'wrapped or staked products']];
+const forms = () => FORMS.map(([key, name]) => `${radar.aside.filter((r) => r.why.includes(key)).length} ${name}`).join(', ');
+
+/** The readout above the board: every protocol placed, the forms never ranked, the pricing line, the farms to run. */
 function readout() {
-  const b = radar.board, n = (k) => b.filter((r) => r.plan.verdict === k).length, best = [...b].sort((p, q) => q.plan.net - p.plan.net).slice(0, 3);
-  const row = (label, text) => `<dt>${label}</dt><dd>${text}</dd>`;
+  const b = radar.board, all = radar.rows.length, n = (k) => b.filter((r) => r.plan.verdict === k).length, best = [...b].sort((p, q) => q.plan.net - p.plan.net).slice(0, 3);
+  const row = (label, text) => `<dt>${label}</dt><dd>${text}</dd>`, part = (cls, rows) => `<i class='${cls}' style='width:${(rows.length / all) * 100}%'></i>`;
+  const largest = [...radar.aside].sort((p, q) => q.tvl - p.tvl).slice(0, 6);
   return `<section class='lead'><h2>What each unlaunched token would be worth, and whether farming it pays</h2><dl>
-    ${row('coverage', `<b>${b.filter((r) => r.watch).length}/${DATA.snapshot.watchlist.length}</b> watchlist protocols ranked · <b>${b.length}</b> record no token · ${radar.traded.length} already trade · ${radar.aside.length} set aside, each with its reason`)}
-    ${row('model', `<code>implied value = sizeCurve(TVL × growthCarry(7d change)) × launchOdds(time with no token)</code><button class='link' data-set='tab' data-v='model'>how it is priced</button>`)}
+    ${row('coverage', `<span class='meter' title='Ranked, already trading, set aside'>${part('pre', b)}${part('token', radar.traded)}${part('aside', radar.aside)}</span><b>${all}/${all}</b> protocols placed · <b>${b.filter((r) => r.watch).length}/${DATA.snapshot.watchlist.length}</b> watchlist ranked · <b>${b.length}</b> record no token · ${radar.traded.length} already trade · ${radar.aside.length} set aside`)}
+    ${row('not ranked', `${largest.map((r) => esc(r.name)).join(' · ')} · <button class='link more' data-set='tab' data-v='aside'>+${radar.aside.length - largest.length} more</button>: exchange balances, bridges and staked forms of tokens that trade`)}
+    ${row('model',`<code>implied value = sizeCurve(TVL × growthCarry(7d change)) × launchOdds(time with no token)</code><button class='link' data-set='tab' data-v='model'>how it is priced</button>`)}
     ${row('farm next', `${best.map((r) => `<button class='link' data-open='${r.slug}'>${esc(r.name)}</button> <span class='up'>${signed(r.plan.net)}</span>`).join(' · ')} · <b class='Farm'>${n('Farm')} farm</b>, ${n('Thin')} thin, ${n('Skip')} skip at ${cash(state.deposit)} each`)}
   </dl></section>`;
 }
 
 /** The held-out record as a table: each pricing rule's typical miss in both tests, the model's row lit. */
-const testsTable = () => `<table class='tests'><thead><tr><th>Pricing rule, typical miss</th><th title='Each token priced by a fit without it'>left out</th><th title='The ${CHECK.fit} longest-listed tokens price the ${CHECK.test} newest'>old → new</th></tr></thead><tbody>${CHECK.tests.map((t) => `<tr class='${t.used ? 'used' : ''}'><td>${t.label}</td><td>×${t.miss.toFixed(2)}</td><td>×${t.split.toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
+const testsTable = () => `<table class='tests'><thead><tr><th>Typical miss</th><th title='Each token priced by a fit without it'>left out</th><th title='The ${CHECK.fit} longest-listed tokens price the ${CHECK.test} newest'>old→new</th></tr></thead><tbody>${CHECK.tests.map((t) => `<tr class='${t.used ? 'used' : ''}'><td>${t.label}</td><td>×${t.miss.toFixed(2)}</td><td>×${t.split.toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
 
-/** The evidence strip between the readout and the board: both fits drawn on the snapshot, and their held-out tests. */
+/** The evidence, beside the board on a wide screen and in a strip above it on a narrower one: both fits
+ *  drawn on the snapshot's own protocols, and the held-out tests of every pricing rule tried. */
 function evidence() {
-  const o = CHECK.odds, pane = (name, about, body) => `<div><h3><i>${name}</i><small>${about}</small></h3>${body}</div>`;
-  return `<section class='proof'>
-    ${pane('sizeCurve', `${CHECK.n} traded tokens · held-out miss ×${CHECK.miss.toFixed(2)}`, scatter(null, 380, 118))}
-    ${pane('launchOdds', `${o.n} protocols · held-out hit ${pct(o.hit)}, base ${pct(o.base)}`, oddsChart(null, 380, 118))}
-    ${pane('held out', 'priced by fits that never saw them', testsTable() + `<p class='legend'>A fitted extra term must beat the curve on both tests to be used: neither does. The 7-day carry is a projection, not a fit.</p>`)}
-  </section>`;
+  const o = CHECK.odds, t = CHECK.tests, pane = (name, about, body) => `<div><h3><i>${name}</i><small>${about}</small></h3>${body}</div>`;
+  return `<aside class='proof' aria-label='The model’s evidence'>
+    ${pane('sizeCurve', `held-out miss ×${CHECK.miss.toFixed(2)} · flat ×${t[0].miss.toFixed(2)}`, scatter(null, 252, 116))}
+    ${pane('launchOdds', `held-out hit ${pct(o.hit)} · base rate ${pct(o.base)}`, oddsChart(null, 252, 116))}
+    ${pane('held out', 'priced by fits that never saw them', testsTable() + `<p class='legend'>A fitted term must win both tests to be used: neither does. The carry is a projection, not a fit.</p>`)}
+  </aside>`;
 }
 
 /** The model page: the three steps with their fitted figures, both fits drawn, and the held-out record. */
@@ -219,7 +222,7 @@ function modelPage() {
       <li><b>Time with no token sets the odds.</b> <code>launchOdds</code>: of look-alikes still tokenless at its age, the share that record a token within ${M.horizon / 365} years, by age and category, fitted on ${o.n} protocols.</li>
     </ol><p>Implied value is step 1 on step 2's TVL, times step 3. No protocol is priced by its name, and every figure is fitted in this browser from the snapshot.</p>
     <h3>Held out</h3>${testsTable()}
-    <p>Left out: each token priced by a fit that never saw it. Old → new: the ${CHECK.fit} longest-listed tokens price the ${CHECK.test} newest. An extra term is used only if it beats the plain curve on both tests; listing age and chain count do not. Launch odds call ${pct(o.hit)} of left-out protocols right, against a base rate of ${pct(o.base)}.</p>
+    <p>Left out: each token priced by a fit that never saw it. Old→new: the ${CHECK.fit} longest-listed tokens price the ${CHECK.test} newest. An extra term is used only if it beats the plain curve on both tests; listing age and chain count do not. Launch odds call ${pct(o.hit)} of left-out protocols right, against a base rate of ${pct(o.base)}.</p>
     <h3>Farm assumptions</h3><p>Farmers split ${pct(state.share)} of a token's value by dollars and days in. A deposit gives up a ${pct(state.hurdle)} T-bill yield; gas is $${GAS.Ethereum} a transaction on Ethereum, $${GAS_ELSE.toFixed(2)} on most other chains. The board's what-if row changes the first two and the deposit.</p></div>
     <div><h3>Traded tokens set the curve</h3>${scatter()}<h3>The no-token clock</h3>${oddsChart()}</div></section>`;
 }
@@ -227,20 +230,21 @@ function modelPage() {
 const tick = (v) => '$' + (v >= 1e9 ? v / 1e9 + 'B' : v / 1e6 + 'M');
 /** Market cap on TVL, log-log: traded tokens, the fitted curve with its held-out band, and the board. */
 function scatter(focus, W = 290, H = 124) {
-  const x = (v) => 34 + ((Math.log10(v) - 6.7) / 3.9) * (W - 40), y = (v) => H - 16 - ((Math.log10(v) - 5) / 5.4) * (H - 22),
+  const top = focus ? 6 : 16, x = (v) => 34 + ((Math.log10(v) - 6.7) / 3.9) * (W - 40), y = (v) => H - 16 - ((Math.log10(v) - 5) / 5.4) * (H - 16 - top),
     at = (shift) => [5e6, 4e10].map((t) => `${x(t)},${y(sizeCurve(M.curve, t) * 10 ** shift)}`),
     dot = (r, v, cls, size) => `<circle class='${cls}' cx='${x(r.tvl).toFixed(1)}' cy='${y(v).toFixed(1)}' r='${size}'/>`;
   const ticks =[1e7, 1e8, 1e9, 1e10].map((t) => `<text x='${x(t)}' y='${H - 4}'>${tick(t)}</text>`).join('') + [1e6, 1e8, 1e10].map((t) => `<text class='left' x='30' y='${y(t) + 3}'>${tick(t)}</text><path class='grid' d='M34 ${y(t)} H${W - 6}'/>`).join('');
   return `<svg class='chart' viewBox='0 0 ${W} ${H}' role='img' aria-label='Market cap against TVL for traded tokens, with the fitted size curve'>${ticks}
     <polygon class='bandfill' points='${[...at(CHECK.band[1]), ...at(CHECK.band[2]).reverse()].join(' ')}'/><polyline class='curve' points='${at(0).join(' ')}'/>
     ${radar.tokens.map((t) => dot(t.r, t.r.mcap, 'token', 2.1)).join('')}${focus ? '' : radar.board.map((r) => dot(r, r.implied, 'pre', 1.5)).join('')}
-    ${focus ? `<path class='drop' d='M${x(focus.tvl)} ${y(focus.ifLaunched)} V${y(focus.implied)}'/>${dot(focus, focus.ifLaunched, 'ring', 4)}${dot(focus, focus.implied, 'focus', 4.5)}` : ''}</svg>
-    <p class='legend'>${focus ? `Size curve on ${CHECK.n} traded tokens (grey). It sits on the line, then drops by its odds.` : 'Grey: traded tokens, market cap on TVL. Line: the fit, P25–P75. Green: the board.'}</p>`;
+    ${focus ? `<path class='drop' d='M${x(focus.tvl)} ${y(focus.ifLaunched)} V${y(focus.implied)}'/>${dot(focus, focus.ifLaunched, 'ring', 4)}${dot(focus, focus.implied, 'focus', 4.5)}`
+    : `<circle class='token' cx='38' cy='6' r='2.1'/><text class='key' x='43' y='9'>${CHECK.n} traded</text><circle class='pre' cx='101' cy='6' r='2.1'/><text class='key' x='106' y='9'>board</text><path class='curve' d='M142 6 h10'/><text class='key' x='156' y='9'>fit · P25–P75</text>`}</svg>
+    ${focus ? `<p class='legend'>Size curve on ${CHECK.n} traded tokens (grey). It sits on the line, then drops by its odds.</p>` : ''}`;
 }
 
 /** The share of stand-alone protocols that record a token, by age: the snapshot's bars and the fitted line. */
 function oddsChart(focus, W = 290, H = 124) {
-  const YEARS = 5.2, BINS = [0, 0.5, 1, 1.5, 2, 3, 4, 9], x = (yrs) => 34 + (Math.min(yrs, YEARS) / YEARS) * (W - 40), y = (s) => H - 16 - s * (H - 26);
+  const top = focus ? 10 : 16, YEARS = 5.2, BINS = [0, 0.5, 1, 1.5, 2, 3, 4, 9], x = (yrs) => 34 + (Math.min(yrs, YEARS) / YEARS) * (W - 40), y = (s) => H - 16 - s * (H - 16 - top);
   const alone = radar.rows.filter((r) => r.alone), cat = focus ? focus.cat : '';
   const bars = BINS.slice(0, -1).map((from, i) => {
     const bin = alone.filter((r) => r.aged / 365 >= from && r.aged / 365 < BINS[i + 1]), s = bin.filter((r) => r.kind === 'traded').length / bin.length;
@@ -250,8 +254,9 @@ function oddsChart(focus, W = 290, H = 124) {
     mark = (days, cls) => `<circle class='${cls}' cx='${x(days / 365)}' cy='${y(tokenShare(M.odds, days, cat))}' r='4'/>`;
   return `<svg class='chart' viewBox='0 0 ${W} ${H}' role='img' aria-label='Share of protocols recording a token by age'>
     ${[0, 1, 2, 3, 4, 5].map((t) => `<text x='${x(t)}' y='${H - 4}'>${t} y</text>`).join('')}${[0, 0.5, 1].map((s) => `<text class='left' x='30' y='${y(s) + 3}'>${pct(s)}</text><path class='grid' d='M34 ${y(s)} H${W - 6}'/>`).join('')}
-    ${bars}<polyline class='curve' points='${line}'/>${focus ? mark(focus.aged, 'focus') + mark(focus.aged + M.horizon, 'ring') : ''}</svg>
-    <p class='legend'>${focus ? `${esc(cat)} look-alikes with a token: ${pct(tokenShare(M.odds, focus.aged, cat))} at its age, ${pct(tokenShare(M.odds, focus.aged + M.horizon, cat))} two years on.` : 'Share recording a token, by age. The flatter the line ahead, the lower the odds.'}</p>`;
+    ${bars}<polyline class='curve' points='${line}'/>${focus ? mark(focus.aged, 'focus') + mark(focus.aged + M.horizon, 'ring')
+    : `<rect class='bar' x='35' y='2' width='7' height='7'/><text class='key' x='46' y='9'>share with a token, by age</text><path class='curve' d='M204 6 h10'/><text class='key' x='218' y='9'>fit</text>`}</svg>
+    ${focus ? `<p class='legend'>${esc(cat)} look-alikes with a token: ${pct(tokenShare(M.odds, focus.aged, cat))} at its age, ${pct(tokenShare(M.odds, focus.aged + M.horizon, cat))} two years on.</p>` : ''}`;
 }
 
 // ---------------------------------------------------------------- the other two groups
@@ -270,7 +275,8 @@ function render() {
   if (planned !== [state.deposit, state.share, state.hurdle].join('/')) replan();
   seal = seal || selfCheck();
   const row = radar.board.find((r) => r.slug === state.open), model = state.tab === 'model';
-  app.innerHTML = topBar() + (model ? modelPage() : (state.tab === 'pre' ? readout() + evidence() : '') + toolbar() + `<section id='rows'></section>`) + `<footer id='status'></footer>` + (row ? detail(row) : '');
+  const board = state.tab === 'pre';
+  app.innerHTML = topBar() + (model ? modelPage() : (board ? readout() : '') + toolbar() + `<div class='deck'><section id='rows'></section>${board ? evidence() : ''}</div>`) + `<footer id='status'></footer>` + (row ? detail(row) : '');
   if (model) statusLine('Fitted in this browser from the snapshot');
   else renderRows();
 }
