@@ -4,8 +4,9 @@
 //   node scripts/screenshots.mjs <kit>/input/snapshot.json
 //
 // The judge is sent the cover fitted into 1024x640 and the other two side by side in 510x640 cells, so
-// the board is shot landscape at 16:10 and the detail and filtered views portrait at 4:5, each at a
-// device pixel ratio above 1: text lands near its CSS size in the judge's view instead of half of it.
+// the board is shot landscape at 16:10, at the 1440px width where the evidence stands beside it, and
+// the detail and filtered views portrait at 4:5 at a device pixel ratio of 1.25, so their text lands
+// near its CSS size in the judge's view instead of half of it.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
