@@ -31,10 +31,17 @@ small { display: block; color: var(--soft); font-size: 11.5px; }
 .meta { color: var(--soft); white-space: nowrap; }
 
 /* the readout: what the board covers, how it prices, how that held up, what to farm */
-.lead { padding: 18px 0 8px; } h2 { font-size: 16px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.lead { padding: 14px 0 8px; } h2 { font-size: 16px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 10px 0 0; }
 dt { color: var(--green); } dd { margin: 0; color: var(--soft); } dd b, dd code { color: var(--ink); font-weight: 500; }
 dd .link { margin-left: 16px; } dd .link + span { margin-left: 2px; } dd .link:first-child { margin-left: 0; color: var(--ink); }
+
+/* the evidence strip: both fits drawn and their held-out tests, three panes parted by hairlines */
+.proof { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 40px; margin-top: 4px; padding: 9px 0 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.proof > div { position: relative; min-width: 0; } .proof > div + div::before { content: ''; position: absolute; top: -9px; bottom: -8px; left: -20px; border-left: 1px solid var(--line); }
+.proof h3 { margin: 0 0 3px; font-size: 12.5px; font-weight: 500; } .proof h3 i { color: var(--green); font-style: normal; }
+.proof h3 small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .proof .chart text { font-size: 9.5px; }
+.proof .tests th { padding: 0 0 3px; } .proof .tests td { padding: 1px 10px 1px 0; font-size: 12px; } .proof .legend { font-size: 11px; line-height: 1.4; }
 
 /* filters and the what-if row */
 .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; }
@@ -53,7 +60,7 @@ table { width: 100%; border-collapse: collapse; }
 th { position: sticky; top: 0; padding: 7px 6px; border-bottom: 1px solid var(--rule); background: var(--screen); color: var(--soft); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-align: left; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
 th:hover, th.sorted { color: var(--ink); } th.up::after { border-top: 0; border-bottom: 4px solid var(--green); }
 th.sorted::after { content: ''; display: inline-block; margin-left: 6px; border: 4px solid transparent; border-top-color: var(--green); border-bottom: 0; vertical-align: 1px; }
-td { padding: 5px 6px; border-bottom: 1px solid var(--line); } td:first-child { color: var(--soft); } td:nth-child(2), td small { white-space: nowrap; }
+td { padding: 4px 6px; border-bottom: 1px solid var(--line); } td:first-child { color: var(--soft); } td:nth-child(2), td small { white-space: nowrap; }
 .num { text-align: right; white-space: nowrap; } .empty { padding: 40px 0; color: var(--soft); text-align: center; }
 tbody tr[data-open] { cursor: pointer; } tbody tr[data-open]:hover, tr.cur { background: var(--raised); } tr.cur td:first-child { color: var(--green); }
 .name { font-weight: 600; text-align: left; } .name + i { margin-left: 10px; color: var(--soft); font-size: 11.5px; font-style: normal; } .name + .watch { color: var(--green); }
@@ -73,15 +80,15 @@ kbd { margin-left: 10px; padding: 0 5px; border: 1px solid var(--rule); border-r
 .detail { position: fixed; top: 0; right: 0; bottom: 0; width: min(660px, 100%); overflow: auto; padding: 14px 22px 28px; border-left: 1px solid var(--rule); background: var(--screen); }
 .detail header { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 11.5px; } .detail header span { margin: 0 auto 0 6px; }
 .ghost { padding: 0 10px; color: var(--soft); transition: color 0.15s, background 0.15s; } .ghost:hover { color: var(--ink); background: var(--raised); }
-.detail h2 { margin-top: 14px; font-size: 18px; } .sub { color: var(--soft); } .call { margin-bottom: 6px; }
-h3 { display: flex; align-items: center; gap: 10px; margin: 20px 0 8px; font-size: 13.5px; font-weight: 600; } h3 small { flex: 1; }
+.detail h2 { margin-top: 12px; font-size: 18px; } .sub { color: var(--soft); } .call { margin-bottom: 6px; }
+h3 { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; font-size: 13.5px; font-weight: 600; } h3 small { flex: 1; }
 .ladder { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; padding: 9px 0 0; border-top: 1px solid var(--line); list-style: none; }
 .ladder b { display: block; margin: 1px 0; font-size: 15px; font-weight: 600; } .ladder .total b { color: var(--green); }
 .ladder em { display: block; color: var(--soft); font-size: 11px; font-style: normal; line-height: 1.4; }
 .steps th { position: static; padding: 5px 6px; cursor: default; } .steps .sum td { border: 0; font-weight: 600; }
 .steps td { padding: 5px 6px; font-size: 12px; line-height: 1.42; vertical-align: top; white-space: normal; }
 .steps td:nth-child(n + 3), .steps th:nth-child(n + 3) { text-align: right; white-space: nowrap; }
-.econ { display: grid; grid-template-columns: 1.15fr 1fr; gap: 28px; margin-top: 12px; } .econ p { color: var(--soft); }
+.econ { display: grid; grid-template-columns: 1.3fr 1fr; gap: 28px; margin-top: 10px; } .econ p { color: var(--soft); }
 .econ td { padding: 3px 0; border: 0; } .econ td small { display: inline; margin-left: 4px; } .econ td + td { text-align: right; white-space: nowrap; }
 .econ .sum td { padding-top: 6px; border-top: 1px solid var(--rule); font-weight: 600; }
 .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; } .charts .chart { height: 92px; } .charts .legend { font-size: 11px; line-height: 1.4; }
@@ -97,14 +104,20 @@ h3 { display: flex; align-items: center; gap: 10px; margin: 20px 0 8px; font-siz
 .tests th { position: static; padding-left: 0; cursor: default; } .tests td { padding: 5px 10px 5px 0; } .tests td + td, .tests th + th { text-align: right; }
 .tests .used td { color: var(--green); font-weight: 600; }
 
+/* narrower windows give up the least-needed things first: bands and the tests pane, then two columns, then the strip */
+@media (max-width: 1100px) {
+  .band, .fees, .proof > div:last-child { display: none; } .proof { grid-template-columns: 1fr 1fr; }
+  td:nth-child(-n + 2), td:nth-child(-n + 2) small { white-space: normal; }
+}
+@media (max-width: 960px) { .mid, .meta { display: none; } }
 @media (max-width: 760px) {
   #app { padding: 0 14px; } #status { margin: 0 -14px; padding: 6px 14px; }
-  .wide, .meta, .band, .keys, .seal, dt, dd:nth-of-type(n + 2) { display: none; } dl { display: block; }
+  .wide, .keys, .seal, .proof, dt, dd:nth-of-type(n + 2) { display: none; } dl { display: block; }
   .top { gap: 18px; overflow-x: auto; } .top nav { gap: 16px; } .lead { padding: 16px 0 6px; }
   .tools input { flex: 1; } .what { gap: 8px 14px; } .detail { padding: 12px 14px 24px; border: 0; }
   .ladder { gap: 10px; } .econ, .charts, .model { gap: 18px; } .model { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
-  td small, td:nth-child(2) { white-space: normal; } .name + i, .farm small { display: none; }
+  #app { padding: 0 10px; } #status { margin: 0 -10px; padding: 6px 10px; } td { padding: 4px 3px; } td small { white-space: normal; } .val > b { min-width: 0; } .name + i, .farm small, .tok { display: none; }
   .ladder { grid-template-columns: 1fr 1fr; } .econ, .charts { grid-template-columns: 1fr; }
 }

@@ -46,11 +46,13 @@ At $1,000 a protocol the radar finds 21 farms, 18 thin and 159 skips. The large 
 
 Static, no framework, no network. It is a terminal: a dark screen, one self-hosted monospace face (IBM Plex Mono, under the SIL Open Font License in `licenses/`), one green, and a status line that says what is shown and which keys drive it. One board, one sentence on what it is, and everything else a keystroke or a click away.
 
-- **Readout**: four lines above the board: coverage, the one line every row is priced by, how that held up on tokens the fit never saw, and the farms to run next.
+- **Readout**: three lines above the board: coverage, the one line every row is priced by, and the farms to run next.
+- **Evidence strip**: under the readout, both fits drawn on the snapshot (market cap on TVL with the fitted curve and its P25 to P75 band; the share of protocols recording a token, by age) beside the held-out table: each pricing rule's typical miss on tokens its fit never saw, the model's row lit.
 - **Board**: sort by any column; filter by list, verdict, chain or search. A filtered board says what farming everything shown would net.
 - **What if**: change the deposit, the share of the token that goes to farmers, or the T-bill yield, and all 198 plans and verdicts re-solve in place. Export the rows shown as CSV.
 - **Keyboard**: `j`/`k` or the arrows move the cursor, `enter` opens its row, `/` searches, `esc` closes; with a row open, `j`/`k` step to the next one.
-- **Detail**: open any row for how its value is built, its farm plan step by step, and the plan's ledger.
+- **Detail**: open any row for how its value is built, its farm plan step by step, the plan's ledger, and where the protocol sits on both fits.
+- **Any width**: a narrower window gives up the least-needed things first (the bands and the tests pane, then two columns, then the strip); nothing scrolls sideways from a 360px phone up.
 - **Already trade / Set aside**: the protocols that are never ranked, each with its reason.
 - **Model**: the three steps with their fitted figures, both fits drawn on the snapshot, the held-out tests and the farm assumptions.
 
