@@ -1,9 +1,12 @@
-// radar.js: the page. It prices the snapshot with model.js, plans each farm with plan.js, and draws
-// the board (sortable, filterable, keyboard-driven), a detail view for every protocol and a page on
-// the model. Nothing here holds a value: every figure is computed in the browser from data.js's snapshot.
+// radar.js: the page. It prices the snapshot with model.js, plans each farm with plan.js, and draws:
+//   the board      every column sorts; filters by list, verdict, chain and search; j/k, enter, / and esc
+//   what-if        deposit, airdrop share and T-bill yield re-plan all rows live; the rows shown export as CSV
+//   a detail view  per protocol: how its value is built, both fits drawn, its costed steps and ledger
+//   three more tabs: tokens that already trade, protocols set aside with the reason, and the model's tests
+// Nothing here holds a value: every figure is computed in the browser from data.js's snapshot.
 const DATA = window.RADAR_DATA, app = document.getElementById('app');
 const radar = DATA && buildRadar(DATA.snapshot), M = radar && radar.model, CHECK = M && M.check;
-const state = { tab: 'pre', scope: 'all', verdict: 'any', chain: '', q: '', sort: 'rank', dir: 1, deposit: DEFAULTS.deposit, share: DEFAULTS.share, open: '' };
+const state = { tab: 'pre', scope: 'all', verdict: 'any', chain: '', q: '', sort: 'rank', dir: 1, deposit: DEFAULTS.deposit, share: DEFAULTS.share, hurdle: HURDLE, open: '' };
 const INITIAL = { ...state };
 let planned = '', seal = null, cursor = 0; // cursor: the row the keyboard is on
 
@@ -15,10 +18,10 @@ const span = (days) => (days === null ? 'undated' : days < 365 ? Math.round(days
 const scopeOf = (r) => (r.watch ? 'watch' : r.tvl >= DATA.snapshot.floor_usd ? 'off' : 'early');
 const SCOPES = { watch: 'Watchlist', off: 'Off-list', early: 'Early' };
 
-/** Plan every board row at the chosen deposit and airdrop share. */
+/** Plan every board row at the what-if settings: deposit, airdrop share and the T-bill yield given up. */
 function replan() {
-  for (const r of radar.board) r.plan = farmPlan(r, state.deposit, state.share, M.drift);
-  planned = state.deposit + '/' + state.share;
+  for (const r of radar.board) r.plan = farmPlan(r, state.deposit, state.share, M.drift, state.hurdle);
+  planned = [state.deposit, state.share, state.hurdle].join('/');
 }
 
 /** The page against board.json: every row re-priced and re-planned here must equal the row main.ts wrote. */
@@ -30,7 +33,7 @@ function selfCheck() {
   return { same, ok: same === DATA.board.length && same === radar.board.length };
 }
 
-// ---------------------------------------------------------------- state, filters, sorting
+// ---------------------------------------------------------------- state, filters, sorting, export
 
 function readHash() {
   Object.assign(state, INITIAL);
@@ -60,6 +63,14 @@ function moveCursor(to, scroll) {
   rows.forEach((tr, i) => tr.classList.toggle('cur', i === cursor));
   if (scroll && rows[cursor]) rows[cursor].scrollIntoView({ block: 'nearest' });
 }
+/** Download the rows shown as CSV: every figure of the board and of each plan, at the what-if settings. */
+function exportCsv() {
+  const quote = (v) => (/[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v), head = 'rank,slug,name,category,chains,tvl_usd,change_7d,days_no_token,if_launched_usd,launch_odds,implied_value_usd,p25_usd,p75_usd,verdict,net_usd,hold_days,fees_usd,minutes,farm_chain';
+  const lines = sortRows(filterRows(), BOARD_COLUMNS).map((r) => [r.rank, r.slug, r.name, r.cat, r.chains.join(' '), r.tvl, r.chg, r.age, Math.round(r.ifLaunched), r.odds.toFixed(4), r.value, Math.round(r.p25), Math.round(r.p75), r.plan.verdict, r.plan.net.toFixed(2), r.plan.hold, r.plan.fees.toFixed(2), r.plan.minutes, r.plan.chain].map(quote).join(','));
+  const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([[head, ...lines].join('\n')], { type: 'text/csv' })), download: `launch-radar-${DATA.snapshot.as_of}.csv` });
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
 
 // ---------------------------------------------------------------- the board
 
@@ -71,7 +82,7 @@ const nameCell = (r) => `<button class='name' data-open='${r.slug}'>${esc(r.name
 const changeCell = (r) => (r.chg === null ? '–' : `<span class='${r.chg - M.drift > 10 ? 'up' : r.chg - M.drift < -10 ? 'down' : ''}'>${r.chg > 0 ? '+' : ''}${Math.abs(r.chg) > 999 ? Math.round(r.chg / 100) + '×' : r.chg.toFixed(1) + '%'}</span>`);
 // the implied value, and its P25-P75 band on one log axis shared by every row
 const valueCell = (r) => `<b>${usd(r.implied)}</b><span class='band'><i style='left:${axis(r.p25)}%;width:${axis(r.p75) - axis(r.p25)}%'></i><b style='left:${axis(r.implied)}%'></b></span>`;
-const farmCell = (r) => `<b class='${r.plan.verdict}'>${r.plan.verdict}</b> ${signed(r.plan.net)}<small>${r.plan.play} · ${esc(r.plan.chain)} · ${r.plan.hold}d</small>`;
+const farmCell = (r) => `<b class='${r.plan.verdict}'>${r.plan.verdict}</b> ${signed(r.plan.net)}<span class='wide fees'> · ${usd(r.plan.fees)} fees</span><small>${r.plan.play} · ${esc(r.plan.chain)} · ${r.plan.hold}d</small>`;
 
 const BOARD_COLUMNS = [
   { key: 'rank', label: '#', val: (r) => r.rank, cell: (r) => r.rank },
@@ -82,7 +93,7 @@ const BOARD_COLUMNS = [
   { key: 'ifLaunched', label: 'If launched', cls: 'num wide', tip: 'sizeCurve on its carried TVL', val: (r) => r.ifLaunched, cell: (r) => usd(r.ifLaunched) },
   { key: 'odds', label: 'Odds', cls: 'num wide', tip: 'launchOdds: a look-alike records a token within two years', val: (r) => r.odds, cell: (r) => pct(r.odds) },
   { key: 'implied', label: 'Implied value', cls: 'val', tip: 'If launched × odds, with its P25–P75 band', val: (r) => r.implied, cell: valueCell },
-  { key: 'net', label: 'Farm plan', tip: 'Expected airdrop slice less fees and T-bill yield given up', val: (r) => r.plan.net, cell: farmCell },
+  { key: 'net', label: 'Farm plan', cls: 'farm', tip: 'Expected airdrop slice less fees and T-bill yield given up', val: (r) => r.plan.net, cell: farmCell },
 ];
 
 /** A sortable table: a click on a heading sorts by it, a click on a board row opens its detail view. */
@@ -97,15 +108,17 @@ function table(cols, rows) {
 const seg = (key, options) => `<span class='seg'>${options.map(([v, label, n]) => `<button class='${String(state[key]) === String(v) ? 'on' : ''}' data-set='${key}' data-v='${v}'>${label}${n === undefined ? '' : `<small>${n}</small>`}</button>`).join('')}</span>`;
 const sizeSeg = () => seg('deposit', [[1000, '$1K'], [5000, '$5K'], [25000, '$25K']]);
 
+/** The filters, then the what-if row: three assumptions that re-plan every row, and the CSV export. */
 function toolbar() {
   const b = radar.board, search = `<input type='search' data-q value='${esc(state.q)}' placeholder='/ search' aria-label='Search name, category or chain'>`;
   if (state.tab !== 'pre') return `<nav class='tools'>${search}</nav>`;
   const chains = [...b.flatMap((r) => r.chains).reduce((m, c) => m.set(c, (m.get(c) || 0) + 1), new Map())].sort((p, q) => q[1] - p[1]);
   return `<nav class='tools'>${search}
-    ${seg('scope', [['all', 'All'], ...Object.entries(SCOPES)])}
-    ${seg('verdict', [['any', 'Any'], ...['Farm', 'Thin', 'Skip'].map((k) => [k, k, b.filter((r) => r.plan.verdict === k).length])])}
-    <select data-pick='chain' aria-label='Chain'><option value=''>All chains</option>${chains.map(([c]) => `<option${state.chain === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
-    <label>Deposit${sizeSeg()}</label></nav>`;
+    ${seg('scope', [['all', 'All'], ...Object.entries(SCOPES).map(([k, label]) => [k, label, b.filter((r) => scopeOf(r) === k).length])])}
+    ${seg('verdict', [['any', 'Any verdict'], ...['Farm', 'Thin', 'Skip'].map((k) => [k, k, b.filter((r) => r.plan.verdict === k).length])])}
+    <select data-pick='chain' aria-label='Chain'><option value=''>All chains</option>${chains.map(([c]) => `<option${state.chain === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></nav>
+    <nav class='tools what'><b>What if</b><label>deposit${sizeSeg()}</label><label>to farmers${seg('share', [[0.05, '5%'], [0.1, '10%'], [0.2, '20%']])}</label>
+    <label>T-bill yield${seg('hurdle', [[0, '0%'], [0.04, '4%'], [0.08, '8%']])}</label><button class='ghost' data-export>Export CSV</button></nav>`;
 }
 
 /** The status line: what is shown, whether the page matches board.json, and the keys that drive it. */
@@ -121,7 +134,7 @@ function renderRows() {
   const basket = state.tab === 'pre' && rows.length > 0 && rows.length < all ? ` · farming all ${rows.length} at ${cash(state.deposit)} each nets <b>${signed(sum('net'))}</b> for ${Math.round(sum('minutes') / 60)} h of work` : '';
   const note = state.tab === 'traded' ? 'A token already trades for these, so they are never ranked. Those with a market cap that stand alone are what the size curve is fitted on.'
     : state.tab === 'aside' ? 'These record no token but are not a launch of their own, so they are never ranked.'
-    : `Farm: the expected slice clears the plan's fees and the ${pct(HURDLE)} T-bill yield its deposit gives up. Thin: it clears the fees only. An implied value is this radar's estimate, not a forecast that a token launches.`;
+    : `Farm: the expected slice clears the plan's fees and the ${pct(state.hurdle)} T-bill yield its deposit gives up. Thin: it clears the fees only. An implied value is this radar's estimate, not a forecast that a token launches.`;
   document.getElementById('rows').innerHTML = `${table(cols, rows)}<p class='note'>${note}</p>`;
   statusLine(`${rows.length === all ? all : `${rows.length} of ${all}`} protocols${basket}`);
   moveCursor(cursor);
@@ -129,7 +142,7 @@ function renderRows() {
 
 // ---------------------------------------------------------------- the detail view
 
-/** One protocol: how its value is built, its farm plan step by step, the plan's ledger and verdict. */
+/** One protocol: how its value is built, where it sits on both fits, its farm plan step by step, the ledger. */
 function detail(r) {
   const p = r.plan, cost = p.fees + p.forgone, box = (label, big, note, cls = '') => `<li class='${cls}'><small>${label}</small><b>${big}</b><em>${note}</em></li>`;
   const list = sortRows(filterRows(), BOARD_COLUMNS), at = list.indexOf(r), step = (to, label) => (list[to] && at >= 0 ? `<button class='ghost' data-open='${list[to].slug}' title='${esc(list[to].name)}'>${label}</button>` : '');
@@ -147,6 +160,7 @@ function detail(r) {
       ${box('× launch odds', pct(r.odds), `launchOdds: ${span(r.age)} with no token`)}
       ${box('= implied', usd(r.implied), `P25–P75 ${usd(r.p25)} to ${usd(r.p75)}`, 'total')}
     </ol>
+    <div class='charts'><div>${scatter(r)}</div><div>${oddsChart(r)}</div></div>
     <h3>Farm plan <small>${p.play} on ${esc(p.chain)}, ${p.hold} days</small>${sizeSeg()}</h3>
     <p class='call'><b class='${p.verdict}'>${p.verdict}</b> ${why} Net ${signed(p.net)} on ${cash(state.deposit)}, ${signed(p.perHour)} per hour of work.</p>
     <table class='steps'><thead><tr><th></th><th>Step</th><th>When</th><th>Cost</th><th>Time</th></tr></thead><tbody>
@@ -156,14 +170,12 @@ function detail(r) {
       ${line(`Your slice if it launches <small>${pct(state.share)} of its value to farmers</small>`, usd(p.slice))}
       ${line(`× ${pct(r.odds)} launch odds`, usd(p.ev))}
       ${line('− fees', usd(p.fees))}
-      ${line(`− T-bill yield given up <small>${pct(HURDLE)} a year, ${p.hold} days</small>`, usd(p.forgone))}
+      ${line(`− T-bill yield given up <small>${pct(state.hurdle)} a year, ${p.hold} days</small>`, usd(p.forgone))}
       ${line('Net', signed(p.net), 'sum')}</table>
-      <p>Breaks even at ${p.needOdds > 1 ? 'no' : pct(p.needOdds)} launch odds; the model says ${pct(r.odds)}. ${p.payFrom ? `Pays from a deposit of ${usd(p.payFrom)}.` : 'No deposit size pays.'} The hold is ${p.solved < HOLD[0] ? 'the 30-day minimum: no day here out-earns a T-bill' : p.solved > HOLD[1] ? 'capped at 180 days' : 'where one more day stops out-earning a T-bill'}.</p></div>
-    <h3>Where it sits</h3>
-    <div class='charts'><div>${scatter(r)}</div><div>${oddsChart(r)}</div></div></aside>`;
+      <p>Breaks even at ${p.needOdds > 1 ? 'no' : pct(p.needOdds)} launch odds; the model says ${pct(r.odds)}. ${p.payFrom ? `Pays from a deposit of ${usd(p.payFrom)}.` : 'No deposit size pays.'} The hold is ${p.solved < HOLD[0] ? 'the 30-day minimum: no day here out-earns a T-bill' : p.solved > HOLD[1] ? 'capped at 180 days' : 'where one more day stops out-earning a T-bill'}.</p></div></aside>`;
 }
 
-// ---------------------------------------------------------------- the header, the summary and the model page
+// ---------------------------------------------------------------- the header, the readout and the model page
 
 function topBar() {
   const tab = (v, label, n) => `<button class='${state.tab === v ? 'on' : ''}' data-set='tab' data-v='${v}'>${label}${n ? `<small>${n}</small>` : ''}</button>`;
@@ -172,12 +184,16 @@ function topBar() {
     <p class='meta'>DefiLlama snapshot ${DATA.snapshot.as_of}</p></header>`;
 }
 
-/** What the board is, in three sentences, and the one line every row is priced by. */
-function summary() {
-  const b = radar.board, watch = b.filter((r) => r.watch).length, farms = b.filter((r) => r.plan.verdict === 'Farm').length;
-  return `<section class='lead'><h2>What each unlaunched token would be worth, and whether farming it pays</h2>
-    <p>${b.length} protocols in this snapshot record no token, ${watch === DATA.snapshot.watchlist.length ? 'including all' : 'with'} ${watch} on the house watchlist. Each is priced off the ${CHECK.n} tokens that already trade, a curve that misses an unseen token by a typical ×${CHECK.miss.toFixed(1)} where a flat TVL multiple misses by ×${CHECK.tests[0].miss.toFixed(1)}, then weighed by its odds of launching. ${farms} are worth farming at ${cash(state.deposit)}.</p>
-    <p class='formula'><code>implied value = sizeCurve(TVL × growthCarry(7d change)) × launchOdds(time with no token)</code><button class='link' data-set='tab' data-v='model'>how it is priced</button></p></section>`;
+/** The readout above the board: coverage, the one line every row is priced by, its held-out record, the farms. */
+function readout() {
+  const b = radar.board, t = CHECK.tests, o = CHECK.odds, n = (k) => b.filter((r) => r.plan.verdict === k).length, best = [...b].sort((p, q) => q.plan.net - p.plan.net).slice(0, 3);
+  const row = (label, text) => `<dt>${label}</dt><dd>${text}</dd>`;
+  return `<section class='lead'><h2>What each unlaunched token would be worth, and whether farming it pays</h2><dl>
+    ${row('coverage', `<b>${b.filter((r) => r.watch).length}/${DATA.snapshot.watchlist.length}</b> watchlist protocols ranked · <b>${b.length}</b> record no token · ${radar.traded.length} already trade · ${radar.aside.length} set aside, each with its reason`)}
+    ${row('model', `<code>implied value = sizeCurve(TVL × growthCarry(7d change)) × launchOdds(time with no token)</code><button class='link' data-set='tab' data-v='model'>how it is priced</button>`)}
+    ${row('held out', `typical miss <b>×${CHECK.miss.toFixed(2)}</b> on ${CHECK.n} unseen tokens (flat TVL multiple ×${t[0].miss.toFixed(2)}) · oldest pricing newest ×${CHECK.split.toFixed(2)} (flat ×${t[0].split.toFixed(2)}) · odds call <b>${pct(o.hit)}</b> (base ${pct(o.base)})`)}
+    ${row('farm next', `${best.map((r) => `<button class='link' data-open='${r.slug}'>${esc(r.name)}</button> <span class='up'>${signed(r.plan.net)}</span>`).join(' · ')} · <b class='Farm'>${n('Farm')} farm</b>, ${n('Thin')} thin, ${n('Skip')} skip at ${cash(state.deposit)} each`)}
+  </dl></section>`;
 }
 
 /** The model page: the three steps with their fitted figures, both fits drawn, and the held-out record. */
@@ -192,8 +208,7 @@ function modelPage() {
     </ol><p>Implied value is step 1 on step 2's TVL, times step 3. No protocol is priced by its name, and every figure is fitted in this browser from the snapshot.</p>
     <h3>Held out</h3><table class='tests'><thead><tr><th>Pricing rule, typical miss</th><th>Each token left out</th><th>${CHECK.fit} oldest price ${CHECK.test} newest</th></tr></thead><tbody>${tests}</tbody></table>
     <p>An extra term is used only if it beats the plain curve on both tests; listing age and chain count do not. Launch odds call ${pct(o.hit)} of left-out protocols right, against a base rate of ${pct(o.base)}.</p>
-    <h3>Farm assumptions</h3><p><label>Share of a token's value that goes to farmers ${seg('share', [[0.05, '5%'], [0.1, '10%'], [0.2, '20%']])}</label></p>
-    <p>Farmers split it by dollars and days in. A deposit gives up a ${pct(HURDLE)} T-bill yield; gas is $${GAS.Ethereum} a transaction on Ethereum, $${GAS_ELSE.toFixed(2)} on most other chains.</p></div>
+    <h3>Farm assumptions</h3><p>Farmers split ${pct(state.share)} of a token's value by dollars and days in. A deposit gives up a ${pct(state.hurdle)} T-bill yield; gas is $${GAS.Ethereum} a transaction on Ethereum, $${GAS_ELSE.toFixed(2)} on most other chains. The board's what-if row changes the first two and the deposit.</p></div>
     <div><h3>Traded tokens set the curve</h3>${scatter()}<h3>The no-token clock</h3>${oddsChart()}</div></section>`;
 }
 
@@ -208,7 +223,7 @@ function scatter(focus) {
     <polygon class='bandfill' points='${[...at(CHECK.band[1]), ...at(CHECK.band[2]).reverse()].join(' ')}'/><polyline class='curve' points='${at(0).join(' ')}'/>
     ${radar.tokens.map((t) => dot(t.r, t.r.mcap, 'token', 2.1)).join('')}${focus ? '' : radar.board.map((r) => dot(r, r.implied, 'pre', 1.5)).join('')}
     ${focus ? `<path class='drop' d='M${x(focus.tvl)} ${y(focus.ifLaunched)} V${y(focus.implied)}'/>${dot(focus, focus.ifLaunched, 'ring', 4)}${dot(focus, focus.implied, 'focus', 4.5)}` : ''}</svg>
-    <p class='legend'>${focus ? 'Grey: market cap of traded tokens on their TVL. It sits on the curve, then drops by its odds.' : 'Grey: market cap of traded tokens on their TVL. Green: the board, at implied value.'}</p>`;
+    <p class='legend'>${focus ? `Size curve on ${CHECK.n} traded tokens (grey). It sits on the line, then drops by its odds.` : 'Grey: market cap of traded tokens on their TVL. Green: the board, at implied value.'}</p>`;
 }
 
 /** The share of stand-alone protocols that record a token, by age: the snapshot's bars and the fitted line. */
@@ -224,7 +239,7 @@ function oddsChart(focus) {
   return `<svg class='chart' viewBox='0 0 ${W} ${H}' role='img' aria-label='Share of protocols recording a token by age'>
     ${[0, 1, 2, 3, 4, 5].map((t) => `<text x='${x(t)}' y='${H - 4}'>${t} y</text>`).join('')}${[0, 0.5, 1].map((s) => `<text class='left' x='30' y='${y(s) + 3}'>${pct(s)}</text><path class='grid' d='M34 ${y(s)} H${W - 6}'/>`).join('')}
     ${bars}<polyline class='curve' points='${line}'/>${focus ? mark(focus.aged, 'focus') + mark(focus.aged + M.horizon, 'ring') : ''}</svg>
-    <p class='legend'>${focus ? `Share of ${esc(cat)} look-alikes with a token: ${pct(tokenShare(M.odds, focus.aged, cat))} at its age, ${pct(tokenShare(M.odds, focus.aged + M.horizon, cat))} two years on.` : 'Share of protocols that record a token, by age. The flatter the line ahead, the lower the odds.'}</p>`;
+    <p class='legend'>${focus ? `${esc(cat)} look-alikes with a token: ${pct(tokenShare(M.odds, focus.aged, cat))} at its age, ${pct(tokenShare(M.odds, focus.aged + M.horizon, cat))} two years on.` : 'Share of protocols that record a token, by age. The flatter the line ahead, the lower the odds.'}</p>`;
 }
 
 // ---------------------------------------------------------------- the other two groups
@@ -240,20 +255,21 @@ const TRADED_COLUMNS = [
 const ASIDE_COLUMNS = [TRADED_COLUMNS[0], TRADED_COLUMNS[2], { key: 'why', label: 'Why it is not ranked', val: (r) => r.why, cell: (r) => 'It is ' + r.why }];
 
 function render() {
-  if (planned !== state.deposit + '/' + state.share) replan();
+  if (planned !== [state.deposit, state.share, state.hurdle].join('/')) replan();
   seal = seal || selfCheck();
   const row = radar.board.find((r) => r.slug === state.open), model = state.tab === 'model';
-  app.innerHTML = topBar() + (model ? modelPage() : (state.tab === 'pre' ? summary() : '') + toolbar() + `<section id='rows'></section>`) + `<footer id='status'></footer>` + (row ? detail(row) : '');
+  app.innerHTML = topBar() + (model ? modelPage() : (state.tab === 'pre' ? readout() : '') + toolbar() + `<section id='rows'></section>`) + `<footer id='status'></footer>` + (row ? detail(row) : '');
   if (model) statusLine('Fitted in this browser from the snapshot');
   else renderRows();
 }
 
 if (radar) {
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-set],[data-sort],[data-close],[data-open],[data-reset]');
+    const t = e.target.closest('[data-set],[data-sort],[data-close],[data-open],[data-reset],[data-export]');
     if (!t) return;
     const d = t.dataset;
-    if ('reset' in d) setState({ scope: 'all', verdict: 'any', chain: '', q: '' });
+    if ('export' in d) exportCsv();
+    else if ('reset' in d) setState({ scope: 'all', verdict: 'any', chain: '', q: '' });
     else if (d.set) setState({ [d.set]: typeof INITIAL[d.set] === 'number' ? +d.v : d.v, ...(d.set === 'tab' ? { q: '', sort: d.v === 'pre' ? 'rank' : 'tvl', dir: d.v === 'pre' ? 1 : -1 } : {}) });
     else if (d.sort) setState(state.sort === d.sort ? { dir: -state.dir } : { sort: d.sort, dir: d.sort === 'rank' || d.sort === 'name' ? 1 : -1 });
     else {

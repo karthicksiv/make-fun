@@ -43,11 +43,12 @@ const cheapestChain = (chains) => chains.reduce((best, c) => (gasOn(c) < gasOn(b
  *   your slice if it launches = share x value if launched x deposit / (TVL + deposit) x hold / (earlier + hold)
  * `earlier` is the head start of those already in: the days it has run with no token x RAMP. A late
  * farmer's marginal day is worth odds x full x earlier / (earlier + hold)^2, and the hold ends where
- * that falls to the T-bill's daily yield: the hold is solved, never assumed.
+ * that falls to the T-bill's daily yield: the hold is solved, never assumed. `hurdle` is that yield,
+ * HURDLE unless the page's what-if controls say otherwise.
  */
-function farmPlan(r, deposit, share, drift) {
+function farmPlan(r, deposit, share, drift, hurdle = HURDLE) {
   const p = PLAYS[r.family], chain = cheapestChain(r.chains), gas = gasOn(chain), asset = chain === 'Bitcoin' ? 'BTC' : 'USDC';
-  const full = share * r.ifLaunched * deposit / (r.tvl + deposit), daily = deposit * HURDLE / 365, earlier = r.aged * RAMP;
+  const full = share * r.ifLaunched * deposit / (r.tvl + deposit), daily = Math.max(deposit * hurdle / 365, 1e-9), earlier = r.aged * RAMP;
   const solved = Math.sqrt(r.odds * full * earlier / daily) - earlier;
   const hold = Math.round(Math.max(HOLD[0], Math.min(HOLD[1], solved))), fortnights = Math.floor(hold / 14), weeks = Math.ceil(hold / 7);
   // entry timing, from the row's own week and age
