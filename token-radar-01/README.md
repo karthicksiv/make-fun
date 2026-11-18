@@ -44,9 +44,10 @@ At $1,000 a protocol the radar finds 21 farms, 18 thin and 159 skips. The large 
 
 ## The page
 
-Static, no framework, no network, one self-hosted typeface (IBM Plex, under the SIL Open Font License in `licenses/`). It is built to be read, not decoded: one board, one sentence on what it is, and everything else a click away.
+Static, no framework, no network. It is a terminal: a dark screen, one self-hosted monospace face (IBM Plex Mono, under the SIL Open Font License in `licenses/`), one green, and a status line that says what is shown and which keys drive it. One board, one sentence on what it is, and everything else a keystroke or a click away.
 
 - **Board**: sort by any column; filter by list, verdict, chain or search; change the deposit and the verdicts re-plan. A filtered board says what farming everything shown would net.
+- **Keyboard**: `j`/`k` or the arrows move the cursor, `enter` opens its row, `/` searches, `esc` closes; with a row open, `j`/`k` step to the next one.
 - **Detail**: open any row for how its value is built, its farm plan step by step, and the plan's ledger.
 - **Already trade / Set aside**: the protocols that are never ranked, each with its reason.
 - **Model**: the three steps with their fitted figures, both fits drawn on the snapshot, the held-out tests and the farm assumptions.
@@ -81,7 +82,7 @@ node scripts/screenshots.mjs token-radar-01-kit/input/snapshot.json
 | `dashboard/model.js` | The value model and its held-out checks |
 | `dashboard/plan.js` | The farm plan and its economics |
 | `dashboard/radar.js`, `style.css`, `index.html` | The page: board, filters, detail view, model page |
-| `dashboard/fonts/`, `licenses/LICENSE-OFL.txt` | IBM Plex Sans and Mono, and their license |
+| `dashboard/fonts/`, `licenses/LICENSE-OFL.txt` | IBM Plex Mono and its license |
 | `vendor/makefun-board.ts` | make.fun's dossier library, from the kit, unchanged |
 | `screenshots/` | The board, a detail view and a filtered view |
 | `scripts/screenshots.mjs` | Dev tool that captures them |

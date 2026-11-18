@@ -18,7 +18,7 @@
 //   MAKEFUN_OUTPUT_DIR=out node main.ts --input <kit>/input/snapshot.json
 
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import model from './dashboard/model.js';
@@ -138,8 +138,13 @@ writeFileSync(join(out, 'board.json'), boardBytes);
 const pageData = { snapshot, board: rows.map((r: any) => ({ slug: r.slug, rank: r.rank, value: r.implied_value_usd, steps: r.farm_steps })), board_sha256: createHash('sha256').update(boardBytes).digest('hex') };
 writeFileSync(join(out, 'data.js'), `window.RADAR_DATA = ${JSON.stringify(pageData)};\n`);
 
-/** Copy a directory's regular files, and its sub-directories', skipping dot-names; the names copied. */
+/**
+ * Replace `to` with a copy of a directory's regular files, and its sub-directories', skipping
+ * dot-names; the names copied. Whatever an earlier run left in `to` goes first, so the dossier, which
+ * lists every file there, is the same whatever the output directory held before.
+ */
 function copyTree(from: string, to: string): string[] {
+  rmSync(to, { recursive: true, force: true });
   if (!existsSync(from)) return [];
   mkdirSync(to, { recursive: true });
   const copied: string[] = [];

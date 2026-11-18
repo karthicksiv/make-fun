@@ -53,17 +53,17 @@ function farmPlan(r, deposit, share, drift) {
   // entry timing, from the row's own week and age
   const falling = r.chg !== null && r.chg - drift < -10, young = r.age !== null && r.age < 90;
   const timing = falling ? `TVL moved ${r.chg.toFixed(1)}% this week against the market's ${drift.toFixed(1)}%: enter half now, half after a week that beats the market. `
-    : young ? `Listed ${Math.round(r.age)} days ago, so enter half now and half on day 30. ` : '';
+    : young ? `Listed ${Math.round(r.age)} days ago: enter half now, half on day 30. ` : '';
   const end = solved >= HOLD[1] ? `review. The slice still outgrows T-bills, so extend a month at a time or withdraw`
-    : solved < HOLD[0] ? `withdraw and send the funds back. No day here out-earns T-bills, so ${hold} days is only the shortest stay that leaves a record`
-    : `withdraw and send the funds back. Past day ${hold} an extra day adds less to the slice than T-bills pay`;
+    : solved < HOLD[0] ? `withdraw. No day here out-earns T-bills; ${hold} days is only the shortest stay that leaves a record`
+    : `withdraw. Past it, an extra day adds less to the slice than T-bills pay`;
   const steps = [
-    { day: 'day 0', min: 10, cost: WITHDRAWAL + gas, text: `Send ${usd(deposit)} of ${asset} from an exchange to a fresh wallet on ${chain}${r.chains.length > 1 ? `, the cheapest of its ${r.chains.length} chains` : ''}, plus $5 of gas` },
+    { day: 'day 0', min: 10, cost: WITHDRAWAL + gas, text: `Withdraw ${usd(deposit)} of ${asset} and $5 for gas to a fresh wallet on ${chain}${r.chains.length > 1 ? `, the cheapest of its ${r.chains.length} chains` : ''}` },
     { day: 'day 0', min: p.min, cost: p.tx * gas + deposit * p.bps / 1e4, text: timing + p.enter(r.name, asset) },
-    { day: 'fortnightly', min: 3 * fortnights, cost: fortnights * gas, text: `Each fortnight ${p.upkeep}, so the wallet shows ${fortnights} separate active periods, not one deposit` },
-    { day: 'weekly', min: 2 * weeks, cost: 0, text: `Check its TVL once a week and leave early if it falls below ${usd(r.tvl * 0.75)}, three quarters of today's ${usd(r.tvl)}` },
+    { day: 'fortnightly', min: 3 * fortnights, cost: fortnights * gas, text: `Each fortnight ${p.upkeep}: ${fortnights} separate active periods, not one deposit` },
+    { day: 'weekly', min: 2 * weeks, cost: 0, text: `Check TVL weekly; leave early if it falls below ${usd(r.tvl * 0.75)}, three quarters of today's ${usd(r.tvl)}` },
     { day: `day ${hold}`, min: 10, cost: 2 * gas + WITHDRAWAL, text: `Day ${hold}: ${end}` },
-    { day: 'at launch', min: 5, cost: gas, text: `Keep the wallet and its gas. If ${r.name} opens a points or claim page, claim from this same wallet` },
+    { day: 'at launch', min: 5, cost: gas, text: `Keep the wallet funded. If ${r.name} opens a points or claim page, claim from this wallet` },
   ];
   const sum = (key) => steps.reduce((n, s) => n + s[key], 0);
   const fees = sum('cost'), minutes = sum('min'), forgone = daily * hold;
