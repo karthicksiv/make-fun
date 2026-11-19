@@ -14,12 +14,13 @@
        with its reason), and selfCheck re-prices and re-plans every row in the browser against board.json.
      2 The value model: its curve and its odds are fitted on this snapshot, not typed in, and no protocol
        is named. fitCurve (TVL, on the tokens that trade), growthCarry (7-day change), fitOdds (time with
-       no token); heldOut tests each rule on tokens its fit never saw; classify keeps tokens that trade,
-       and their bridged, staked and custodied forms, off the board.
+       no token); heldOut tests each rule on tokens its fit never saw; rankRanges refits both to say how
+       firm each rank is; classify keeps tokens that trade, and their bridged, staked and custodied
+       forms, off the board.
      3 Farm plans: farmPlan writes six steps with dollars and minutes each, solves the hold per row, nets
        fees and T-bill yield, and says Farm, Thin or Skip, the break-even odds and the deposit that pays.
-     4 The page: every column sorts; list, verdict, chain and search filter; what-if re-plans every row
-       live; CSV export; j/k/enter keys; a detail view per protocol; each view a #hash link; 360px and up.
+     4 The page: every column sorts; list, verdict, kind, chain and search filter; what-if re-plans every
+       row live; CSV export; j/k/enter keys; a detail view per protocol; each view a #hash link.
      5 The look: one self-hosted mono face, one accent green, hairlines for boxes, hand-written CSS. -->
 <main id="app"><p class="boot">Launch Radar has no data yet. Run <code>node main.ts</code>, then open <code>dashboard/index.html</code> in its output folder.</p></main>
 <script src="../data.js"></script>

@@ -1,7 +1,7 @@
 /* Launch Radar. A terminal: one monospace face, a dark screen, one green, hairlines instead of boxes. */
-@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; src: url(fonts/plex-mono-400.woff2) format('woff2'); }
-@font-face { font-family: 'IBM Plex Mono'; font-weight: 500; src: url(fonts/plex-mono-500.woff2) format('woff2'); }
-@font-face { font-family: 'IBM Plex Mono'; font-weight: 600; src: url(fonts/plex-mono-600.woff2) format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; src: url(fonts/plex-mono-400.woff2); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 500; src: url(fonts/plex-mono-500.woff2); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 600; src: url(fonts/plex-mono-600.woff2); }
 :root {
   color-scheme: dark;
   --screen: #0a0d10; --raised: #10151a; --ink: #dde3e8; --soft: #8b959f; --line: #1b222a; --rule: #2b353f;
@@ -9,7 +9,6 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
-html { scrollbar-color: var(--rule) var(--screen); }
 body { margin: 0; background: var(--screen); color: var(--ink); font: 12.5px/1.5 var(--mono); -webkit-font-smoothing: antialiased; caret-color: var(--green); }
 ::selection { background: var(--green); color: var(--screen); }
 #app { max-width: 1480px; margin: 0 auto; padding: 0 20px; } .boot { padding: 64px 0; }
@@ -28,9 +27,9 @@ small { display: block; color: var(--soft); font-size: 11.5px; }
 .top nav { display: flex; gap: 24px; flex: 1; } .top nav small { display: inline; margin-left: 7px; }
 .top nav button { padding: 12px 0 10px; border-bottom: 2px solid transparent; color: var(--soft); white-space: nowrap; transition: color 0.15s; }
 .top nav button:hover { color: var(--ink); } .top nav .on { border-color: var(--green); color: var(--ink); }
-.meta { color: var(--soft); white-space: nowrap; }
+.meta { color: var(--soft); white-space: nowrap; } .meta b { margin-left: 16px; font-weight: 500; }
 
-/* the readout: every protocol placed, the forms never ranked, the pricing line, what to farm */
+/* the readout */
 .lead { padding: 12px 0 6px; } h2 { font-size: 16px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 8px 0 0; }
 dt { color: var(--green); } dd { margin: 0; color: var(--soft); } dd b, dd code { color: var(--ink); font-weight: 500; }
@@ -38,19 +37,18 @@ dd .link { margin-left: 16px; } dd .link + span { margin-left: 2px; } dd .link:f
 .meter { display: inline-flex; width: 132px; height: 6px; margin-right: 12px; vertical-align: 1px; } .meter i { margin-right: 1px; } .meter .aside { background: var(--rule); }
 .meter .pre { background: var(--green); } .meter .token { background: #66717c; }
 
-/* the board, and the evidence: beside it as a rail on a wide screen, above it as a strip on a narrower one.
-   Three panes parted by hairlines: both fits drawn on the snapshot, and the held-out tests. */
+/* the board, and the evidence: a rail beside it on a wide screen, a strip above it on a narrower one */
 .deck { display: grid; grid-template-columns: minmax(0, 1fr); }
 .proof { order: -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 40px; margin-bottom: 6px; padding: 9px 0 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .proof > div { position: relative; min-width: 0; } .proof > div + div::before { content: ''; position: absolute; top: -9px; bottom: -8px; left: -20px; border-left: 1px solid var(--line); }
 .proof h3 { margin: 0 0 3px; font-size: 12.5px; font-weight: 500; } .proof h3 i { color: var(--green); font-style: normal; }
 .proof h3 small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .proof .chart text { font-size: 7px; }
 .proof .tests th { padding: 0 0 3px; } .proof .tests th + th { padding-left: 10px; } .proof .tests td { padding: 1px 10px 1px 0; font-size: 12px; } .proof .legend { font-size: 11px; line-height: 1.4; }
-@media (min-width: 1400px) {
+@media (min-width: 1440px) {
   .deck { grid-template-columns: minmax(0, 1fr) 272px; gap: 0 20px; align-items: start; }
   .proof { order: 0; position: sticky; top: 0; display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0 0 0 20px; border: 0; border-left: 1px solid var(--line); }
   .proof > div { padding: 9px 0 10px; border-top: 1px solid var(--line); } .proof > div + div::before { display: none; } .proof > div:last-child { order: -1; padding-top: 6px; border: 0; }
-  .proof h3 { flex-wrap: wrap; gap: 0 10px; } .proof h3 small { flex-basis: 100%; white-space: normal; } .proof .tests td { padding-right: 6px; font-size: 11.5px; } .proof .tests td:last-child { padding-right: 0; } .proof .tests th { letter-spacing: 0; } .proof .chart text { font-size: 9.5px; }
+  #rows td, #rows th { padding-left: 5px; padding-right: 5px; } .proof h3 { flex-wrap: wrap; gap: 0 10px; } .proof h3 small { flex-basis: 100%; white-space: normal; } .proof .tests td { padding-right: 6px; font-size: 11.5px; } .proof .tests td:last-child { padding-right: 0; } .proof .tests th { letter-spacing: 0; } .proof .chart text { font-size: 9.5px; }
 }
 
 /* filters and the what-if row */
@@ -70,20 +68,16 @@ table { width: 100%; border-collapse: collapse; }
 th { position: sticky; top: 0; padding: 7px 6px; border-bottom: 1px solid var(--rule); background: var(--screen); color: var(--soft); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-align: left; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
 th:hover, th.sorted { color: var(--ink); } th.up::after { border-top: 0; border-bottom: 4px solid var(--green); }
 th.sorted::after { content: ''; display: inline-block; margin-left: 6px; border: 4px solid transparent; border-top-color: var(--green); border-bottom: 0; vertical-align: 1px; }
-td { padding: 4px 6px; border-bottom: 1px solid var(--line); } td:first-child { color: var(--soft); } td:nth-child(2), td small { white-space: nowrap; }
+td { padding: 4px 6px; border-bottom: 1px solid var(--line); } .rk { color: var(--soft); } .who, td small { white-space: nowrap; }
 .num { text-align: right; white-space: nowrap; } .empty { padding: 40px 0; color: var(--soft); text-align: center; }
-tbody tr[data-open] { cursor: pointer; } tbody tr[data-open]:hover, tr.cur { background: var(--raised); } tr.cur td:first-child { color: var(--green); }
+tbody tr[data-open] { cursor: pointer; } tbody tr[data-open]:hover, tr.cur { background: var(--raised); } tr.cur .rk { color: var(--green); }
 .name { font-weight: 600; text-align: left; } .name + i { margin-left: 10px; color: var(--soft); font-size: 11.5px; font-style: normal; } .name + .watch { color: var(--green); }
-.val { white-space: nowrap; } .val > b { display: inline-block; min-width: 54px; font-weight: 600; } .cost { color: var(--soft); } .cost i { font-style: normal; }
-.farm { white-space: nowrap; } .farm small { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
-.band { position: relative; display: none; width: 72px; height: 4px; margin-left: 8px; background: var(--line); vertical-align: 3px; }
-@media (min-width: 1240px) and (max-width: 1399px), (min-width: 1620px) { .band { display: inline-block; } }
-.band i { position: absolute; top: 0; bottom: 0; background: var(--green-dim); } .band b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--green); }
+.val { white-space: nowrap; } .val > b { font-weight: 600; } .cost { color: var(--soft); } .cost i, .sl { font-style: normal; }
+.farm { white-space: nowrap; } .farm small { max-width: 44ch; overflow: hidden; text-overflow: ellipsis; }
 
 /* the status line */
 #status { position: sticky; bottom: 0; display: flex; gap: 24px; margin: 0 -20px; padding: 6px 20px; border-top: 1px solid var(--rule); background: var(--raised); color: var(--soft); font-size: 11.5px; white-space: nowrap; }
 #status p:first-child { flex: 1; overflow: hidden; color: var(--ink); text-overflow: ellipsis; }
-.seal::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; }
 kbd { margin-left: 10px; padding: 0 5px; border: 1px solid var(--rule); border-radius: 2px; color: var(--ink); font: inherit; }
 
 /* the detail view */
@@ -92,12 +86,12 @@ kbd { margin-left: 10px; padding: 0 5px; border: 1px solid var(--rule); border-r
 .detail header { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 11.5px; } .detail header span { margin: 0 auto 0 6px; }
 .ghost { padding: 0 10px; color: var(--soft); transition: color 0.15s, background 0.15s; } .ghost:hover { color: var(--ink); background: var(--raised); }
 .detail h2 { margin-top: 12px; font-size: 18px; } .sub { color: var(--soft); } .call { margin-bottom: 6px; }
-h3 { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; font-size: 13.5px; font-weight: 600; } h3 small { flex: 1; }
+h3 { display: flex; align-items: center; gap: 10px; margin: 12px 0 6px; font-size: 13.5px; font-weight: 600; } h3 small { flex: 1; }
 .ladder { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; padding: 9px 0 0; border-top: 1px solid var(--line); list-style: none; }
 .ladder b { display: block; margin: 1px 0; font-size: 15px; font-weight: 600; } .ladder .total b { color: var(--green); }
 .ladder em { display: block; color: var(--soft); font-size: 11px; font-style: normal; line-height: 1.4; }
 .steps th { position: static; padding: 5px 6px; cursor: default; } .steps .sum td { border: 0; font-weight: 600; }
-.steps td { padding: 5px 6px; font-size: 12px; line-height: 1.42; vertical-align: top; white-space: normal; }
+.steps td { padding: 4px 6px; font-size: 12px; line-height: 1.42; vertical-align: top; white-space: normal; }
 .steps td:nth-child(n + 3), .steps th:nth-child(n + 3) { text-align: right; white-space: nowrap; }
 .econ { display: grid; grid-template-columns: 1.3fr 1fr; gap: 28px; margin-top: 10px; } .econ p { color: var(--soft); }
 .econ td { padding: 3px 0; border: 0; } .econ td small { display: inline; margin-left: 4px; } .econ td + td { text-align: right; white-space: nowrap; }
@@ -115,22 +109,23 @@ h3 { display: flex; align-items: center; gap: 10px; margin: 16px 0 8px; font-siz
 .tests th { position: static; padding-left: 0; cursor: default; } .tests td { padding: 5px 10px 5px 0; } .tests td + td, .tests th + th { text-align: right; }
 .tests .used td { color: var(--green); font-weight: 600; }
 
-/* narrower windows give up the least-needed things first: bands and the tests pane, then two columns, then the strip */
-@media (max-width: 1180px) { .cost i { display: none; } }
-@media (max-width: 1100px) {
+/* narrower windows give up the least-needed things first */
+@media (max-width: 1260px) { .meta span { display: none; } }
+@media (max-width: 1180px) { .cost i, .sl, .meta b:first-of-type { display: none; } }
+@media (max-width: 1120px) {
   .proof > div:last-child { display: none; } .proof { grid-template-columns: 1fr 1fr; }
-  td:nth-child(-n + 2), td:nth-child(-n + 2) small { white-space: normal; }
+  .who, .who small { white-space: normal; }
 }
-@media (max-width: 1023px) { .mid { display: none; } }
+@media (max-width: 1060px) { .mid { display: none; } }
 @media (max-width: 960px) { .meta { display: none; } }
-@media (max-width: 900px) {
+@media (max-width: 920px) {
   #app { padding: 0 14px; } #status { margin: 0 -14px; padding: 6px 14px; }
-  .wide, .keys, .seal, .proof, .cost i, dt, dd:nth-of-type(n + 2) { display: none; } dl { display: block; }
+  .wide, .keys, .proof, .cost i, dt, dd:nth-of-type(n + 2) { display: none; } dl { display: block; }
   .top { gap: 18px; overflow-x: auto; } .top nav { gap: 16px; } .lead { padding: 16px 0 6px; }
   .tools input { flex: 1; } .what { gap: 8px 14px; } .detail { padding: 12px 14px 24px; border: 0; }
   .ladder { gap: 10px; } .econ, .charts, .model { gap: 18px; } .model { grid-template-columns: 1fr; }
 }
-@media (max-width: 520px) {
-  #app { padding: 0 10px; } #status { margin: 0 -10px; padding: 6px 10px; } td { padding: 4px 3px; } td small { white-space: normal; } .val > b { min-width: 0; } .name + i, .farm small, .cost, .tok { display: none; }
+@media (max-width: 600px) {
+  #app { padding: 0 10px; } #status { margin: 0 -10px; padding: 6px 10px; } td { padding: 4px 3px; } td small { white-space: normal; } .name + i, .farm small, .cost, .tok { display: none; }
   .ladder { grid-template-columns: 1fr 1fr; } .econ, .charts { grid-template-columns: 1fr; }
 }

@@ -25,6 +25,7 @@ const FAMILIES = [
 ];
 const HORIZON = 730; // days ahead the launch odds look
 const CARRY_CAP = 0.25; // the 7-day move is carried one more week, held to +/-25%
+const REFITS = 100; // times both fits are refitted on resamples, to say how firm each rank is
 
 const median = (v) => quantile(v, 0.5);
 function quantile(v, q) {
@@ -121,22 +122,24 @@ function heldOut(rows, tokens, drift) {
   // two tests of one pricing rule: each token left out in turn, and the older-listed half pricing the newer
   const score = (set, price) => {
     const dated = set.filter((t) => t.r.age !== null).sort((p, q) => q.r.age - p.r.age), half = dated.length >> 1;
-    const each = set.map((t, i) => price(set.filter((_, j) => j !== i), t));
-    return { each, miss: typical(each), split: typical(dated.slice(half).map((t) => price(dated.slice(0, half), t))), fit: half, test: dated.length - half };
+    const each = set.map((t, i) => price(set.filter((_, j) => j !== i), t)), old = dated.slice(0, half), late = dated.slice(half).map((t) => price(old, t));
+    return { each, old, late, miss: typical(each), split: typical(late), fit: half, test: late.length };
   };
   const carried = tokens.map((t) => ({ ...t, x: t.x + log(growthCarry(t.r.chg, drift)) }));
   const model = score(carried, curveErr()), row = (label, s, used) => ({ label, miss: s.miss, split: s.split, used });
+  // is the printed range honest? the P25-P75 of the older half's own left-out misses, counted on the newer half
+  const early = model.old.map((t, i) => curveErr()(model.old.filter((_, j) => j !== i), t));
+  const holds = model.late.filter((e) => e >= quantile(early, 0.25) && e <= quantile(early, 0.75)).length;
   const alone = rows.filter((r) => r.alone), FOLDS = 10;
-  let hits = 0, brier = 0;
+  let hits = 0;
   for (let k = 0; k < FOLDS; k++) {
     const m = fitOdds(alone.filter((_, i) => i % FOLDS !== k));
-    alone.forEach((r, i) => { if (i % FOLDS === k) { const p = tokenShare(m, r.aged, r.cat), y = r.kind === 'traded'; hits += (p > 0.5) === y; brier += (p - y) ** 2; } });
+    alone.forEach((r, i) => { if (i % FOLDS === k) hits += (tokenShare(m, r.aged, r.cat) > 0.5) === (r.kind === 'traded'); });
   }
   const share = alone.filter((r) => r.kind === 'traded').length / alone.length;
   return {
-    n: tokens.length, fit: model.fit, test: model.test, miss: model.miss, split: model.split,
-    within3: model.each.filter((e) => Math.abs(e) < log(3)).length / tokens.length,
-    band: [0.1, 0.25, 0.75, 0.9].map((q) => quantile(model.each, q)), // the model's own held-out misses
+    n: tokens.length, fit: model.fit, test: model.test, miss: model.miss, split: model.split, holds,
+    band: [0.25, 0.75].map((q) => quantile(model.each, q)), // the P25 and P75 of the model's own held-out misses
     tests: [
       row('flat TVL multiple', score(tokens, flatErr)),
       row('size curve on TVL', score(tokens, curveErr())),
@@ -144,8 +147,21 @@ function heldOut(rows, tokens, drift) {
       row('+ listing age', score(carried, curveErr((t) => log(t.r.aged)))),
       row('+ chain count', score(carried, curveErr((t) => log(t.r.chains.length || 1)))),
     ],
-    odds: { n: alone.length, hit: hits / alone.length, base: Math.max(share, 1 - share), brier: brier / alone.length, baseBrier: share * (1 - share) },
+    odds: { n: alone.length, hit: hits / alone.length, base: Math.max(share, 1 - share) },
   };
+}
+
+/** How firm each rank is. Both fits are refitted REFITS times, each on a resample of what it was fitted
+ *  on, and the board re-ranked: a row's range is where 8 in 10 refits put it. */
+function rankRanges(board, tokens, alone, drift) {
+  let seed = 20261114; // fixed, so every run draws the same resamples
+  const draw = (set) => set.map(() => set[Math.floor(((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) * set.length)]);
+  const seen = board.map(() => []);
+  for (let i = 0; i < REFITS; i++) {
+    const m = { curve: fitCurve(draw(tokens)), odds: fitOdds(draw(alone)), drift }, v = board.map((r) => impliedValue(m, r).implied);
+    v.map((_, j) => j).sort((p, q) => v[q] - v[p]).forEach((j, at) => seen[j].push(at + 1));
+  }
+  board.forEach((r, j) => { r.lo = Math.round(quantile(seen[j], 0.1)); r.hi = Math.round(quantile(seen[j], 0.9)); });
 }
 
 /** Snapshot in, radar out: the fitted model, its checks, and the board ranked by implied value. */
@@ -153,16 +169,17 @@ function buildRadar(snap) {
   const rows = classify(snap);
   const tokens = rows.filter((r) => r.kind === 'traded' && r.alone && r.mcap).map((r) => ({ r, x: Math.log10(r.tvl / 1e8), y: Math.log10(r.mcap) }));
   const drift = median(rows.filter((r) => r.chg !== null).map((r) => r.chg));
-  const model = { curve: fitCurve(tokens), odds: fitOdds(rows.filter((r) => r.alone)), drift, horizon: HORIZON, carryCap: CARRY_CAP };
+  const model = { curve: fitCurve(tokens), odds: fitOdds(rows.filter((r) => r.alone)), drift, horizon: HORIZON, carryCap: CARRY_CAP, refits: REFITS };
   model.check = heldOut(rows, tokens, drift);
   const board = rows.filter((r) => r.kind === 'pre');
   for (const r of board) {
     Object.assign(r, impliedValue(model, r));
     r.value = Math.max(1, Math.round(r.implied)); // board.json's implied_value_usd
-    [r.p10, r.p25, r.p75, r.p90] = model.check.band.map((e) => r.implied * 10 ** e);
+    [r.p25, r.p75] = model.check.band.map((e) => r.implied * 10 ** e);
   }
   board.sort((p, q) => q.value - p.value || (p.slug < q.slug ? -1 : 1));
   board.forEach((r, i) => { r.rank = i + 1; });
+  rankRanges(board, tokens, rows.filter((r) => r.alone), drift);
   return { rows, board, tokens, model, traded: rows.filter((r) => r.kind === 'traded'), aside: rows.filter((r) => r.kind === 'aside') };
 }
 

@@ -64,6 +64,8 @@ const rows = radar.board.map((r: any) => {
   const farm = plan.farmPlan(r, deposit, share, radar.model.drift);
   return {
     rank: r.rank,
+    rank_low: r.lo,
+    rank_high: r.hi,
     slug: r.slug,
     name: r.name,
     implied_value_usd: r.value,
