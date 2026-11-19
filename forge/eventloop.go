@@ -218,17 +218,8 @@ func (l *eventLoop) process(c *loopConn) {
 				break
 			}
 			headEnd := c.scanned + i
-			if wire := l.app.fastIssueGet(c.buf[c.start : c.start+headEnd]); wire != nil {
-				// A stored reply goes out as it stands; the head was never parsed.
-				c.start += headEnd + 4
-				c.scanned = 0
-				if !l.write(c, wire) {
-					return
-				}
-				continue
-			}
-			if reply, used := l.app.fastIssueCreate(c.buf[c.start:c.start+headEnd], c.buf[c.start+headEnd+4:c.end], l.out[:0]); reply != nil {
-				l.out = reply
+			if reply, used := l.app.fast(c.buf[c.start:c.start+headEnd], c.buf[c.start+headEnd+4:c.end], &l.out); reply != nil {
+				// A fast path took the request whole: its head was never parsed.
 				c.start += headEnd + 4 + used
 				c.scanned = 0
 				if !l.write(c, reply) {

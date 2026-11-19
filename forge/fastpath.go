@@ -5,6 +5,7 @@ package main
 //
 //	GET  /api/v3/repos/{owner}/{repo}/issues/{number}   the issue's stored reply, written as it stands
 //	POST /api/v3/repos/{owner}/{repo}/issues            a new issue from a body of just title and body
+//	GET  /{owner}/{repo}.git/info/refs?service=git-receive-pack   the advertisement of a one-ref repository
 //
 // A fast path takes a request only when it is the plain case in every respect: exactly that route,
 // HTTP/1.1 on a connection that stays open, an Authorization header that is exactly "Bearer <the
@@ -241,6 +242,78 @@ func (a *App) fastIssueCreate(head, rest, out []byte) (reply []byte, consumed in
 	headers := [6]string{"Location", v.issueLocation(repo, issue), "X-OAuth-Scopes", oauthScopes, "X-GitHub-Request-Id", id}
 	out = appendReplyHead(out, 201, jsonType, headers[:], len(stored.json()), true)
 	return append(out, stored.json()...), h.contentLength
+}
+
+// fastReceiveAdvertisement answers GET /{owner}/{repo}.git/info/refs?service=git-receive-pack for a
+// repository with exactly one ref: what a client pushing to a single branch asks before every push.
+// The reply is the advertisement's constant opening, that one ref with the capabilities, and a
+// flush, appended to out. A nil result leaves the request to the ordinary path.
+func (a *App) fastReceiveAdvertisement(head, out []byte) []byte {
+	const suffix = ".git/info/refs?service=git-receive-pack"
+	target, lines, ok := requestLine(head, "GET /")
+	if !ok || len(target) <= len(suffix) || string(target[len(target)-len(suffix):]) != suffix {
+		return nil
+	}
+	// The ordinary path cuts the repository's path at the first ".git/"; a key holding one is not
+	// the plain case.
+	key := target[:len(target)-len(suffix)]
+	if bytes.Contains(key, []byte(".git/")) {
+		return nil
+	}
+	h, ok := a.scanPlainHead(lines)
+	if !ok || h.contentLength != 0 {
+		return nil
+	}
+	a.mu.RLock()
+	repo := a.repos[string(key)]
+	a.mu.RUnlock()
+	if repo == nil {
+		return nil
+	}
+	var name string
+	var sha SHA
+	repo.refMu.RLock()
+	if len(repo.refs) == 1 {
+		for only, at := range repo.refs {
+			name, sha = only, at
+		}
+	}
+	repo.refMu.RUnlock()
+	if name == "" {
+		return nil
+	}
+	headers := [4]string{"Cache-Control", "no-cache", "X-GitHub-Request-Id", requestID(a.requests.Add(1))}
+	bodyLen := len(receivePackPreamble) + advertisedRefLen(name, receivePackCaps) + 4
+	out = appendReplyHead(out, 200, receivePackAdvertisement, headers[:], bodyLen, true)
+	out = append(out, receivePackPreamble...)
+	out = appendAdvertisedRef(out, sha, name, receivePackCaps)
+	return pktFlush(out)
+}
+
+// fast runs a request through the fast paths. head is the request head without its blank line, rest
+// what the connection holds after it, and scratch a buffer a reply may be built in. It returns the
+// reply and how many bytes of rest (the request's body) it consumed, or nil when no fast path took
+// the request.
+func (a *App) fast(head, rest []byte, scratch *[]byte) (reply []byte, consumed int) {
+	if len(head) == 0 {
+		return nil, 0
+	}
+	switch head[0] {
+	case 'G':
+		if reply = a.fastIssueGet(head); reply != nil {
+			return reply, 0
+		}
+		if reply = a.fastReceiveAdvertisement(head, (*scratch)[:0]); reply != nil {
+			*scratch = reply
+			return reply, 0
+		}
+	case 'P':
+		if reply, consumed = a.fastIssueCreate(head, rest, (*scratch)[:0]); reply != nil {
+			*scratch = reply
+			return reply, consumed
+		}
+	}
+	return nil, 0
 }
 
 // readIssueFields reads a JSON object that holds a string "title" and, optionally, a string "body",

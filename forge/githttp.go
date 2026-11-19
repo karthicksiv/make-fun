@@ -6,8 +6,15 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/hex"
 	"strconv"
 	"strings"
+)
+
+// The content types of the v0 advertisements.
+const (
+	uploadPackAdvertisement  = "application/x-git-upload-pack-advertisement"
+	receivePackAdvertisement = "application/x-git-receive-pack-advertisement"
 )
 
 const gitAgent = "agent=forge/1.0"
@@ -76,7 +83,7 @@ func (a *App) handleGit(req *Request, owner, name, rest string) *Response {
 				return advertiseV0(repo, "git-upload-pack", uploadPackCaps+" symref=HEAD:"+repo.headRef())
 			}))
 		}
-		return gitResponse(200, "application/x-git-receive-pack-advertisement", advertiseV0(repo, "git-receive-pack", receivePackCaps))
+		return gitResponse(200, receivePackAdvertisement, advertiseV0(repo, "git-receive-pack", receivePackCaps))
 	case rest == "git-upload-pack" && req.Method == "POST":
 		if repo == nil {
 			return gitText(404, "Repository not found.\n")
@@ -135,21 +142,54 @@ func advertiseV2() []byte {
 	return pktFlush(out)
 }
 
+// The constant opening of a v0 advertisement, rendered once: the "# service=" packet and its flush.
+var (
+	uploadPackPreamble  = pktFlush(pktLine(nil, "# service=git-upload-pack\n"))
+	receivePackPreamble = pktFlush(pktLine(nil, "# service=git-receive-pack\n"))
+)
+
+// advertisedRefLen is the length of the packet appendAdvertisedRef writes.
+func advertisedRefLen(name, caps string) int {
+	n := 4 + 40 + 1 + len(name) + 1
+	if caps != "" {
+		n += 1 + len(caps)
+	}
+	return n
+}
+
+// appendAdvertisedRef appends one packet of a v0 advertisement: an object id, a ref name and, when
+// caps is given (the advertisement's first ref), the capabilities behind a NUL.
+func appendAdvertisedRef(out []byte, sha SHA, name, caps string) []byte {
+	n := advertisedRefLen(name, caps)
+	out = append(out, hexDigits[(n>>12)&15], hexDigits[(n>>8)&15], hexDigits[(n>>4)&15], hexDigits[n&15])
+	out = hex.AppendEncode(out, sha[:])
+	out = append(out, ' ')
+	out = append(out, name...)
+	if caps != "" {
+		out = append(out, 0)
+		out = append(out, caps...)
+	}
+	return append(out, '\n')
+}
+
 // advertiseV0 writes the v0/v1 reference advertisement of a service.
 func advertiseV0(repo *Repo, service string, caps string) []byte {
 	out := make([]byte, 0, 1024)
-	out = pktLine(out, "# service="+service+"\n")
-	out = pktFlush(out)
+	if service == "git-receive-pack" {
+		out = append(out, receivePackPreamble...)
+	} else {
+		out = append(out, uploadPackPreamble...)
+	}
 	refs := repo.sortedRefs()
 	head := repo.Ref(repo.headRef())
 	first := true
 	emit := func(sha SHA, name string) {
-		line := sha.String() + " " + name
 		if first {
-			line += "\x00" + caps
+			out = appendAdvertisedRef(out, sha, name, caps)
 			first = false
+		} else {
+			out = appendAdvertisedRef(out, sha, name, "")
 		}
-		out = pktLine(out, line+"\n")
 	}
 	if service == "git-upload-pack" && !head.IsZero() {
 		emit(head, "HEAD")
