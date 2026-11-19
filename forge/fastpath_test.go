@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testToken = "shpat_test_0123456789abcdef"
@@ -202,6 +203,257 @@ func TestStoredIssueReplyFollowsTheIssue(t *testing.T) {
 	if moved := app.fastIssueGet(headOf(elsewhere)); moved == nil || !sameReply(moved, other) {
 		t.Fatalf("the reply stored for the new origin is not the ordinary path's")
 	}
+}
+
+// createFast runs a POST through the create fast path as the event loop does.
+func createFast(app *App, raw string) []byte {
+	head, body, _ := strings.Cut(raw, "\r\n\r\n")
+	reply, used := app.fastIssueCreate([]byte(head), []byte(body), nil)
+	if reply != nil && used != len(body) {
+		panic("the fast path consumed " + strconv.Itoa(used) + " of " + strconv.Itoa(len(body)) + " body bytes")
+	}
+	return reply
+}
+
+func TestFastIssueCreateMatchesOrdinaryPath(t *testing.T) {
+	// Two forges fed the same requests: one creates through the fast path, the other through the
+	// ordinary path. Every reply, and every issue read back afterwards, must be the same bytes.
+	fast, cold := forgeWithIssue(t, 1), forgeWithIssue(t, 1)
+	path := "/api/v3/repos/" + defaultLogin + "/widgets/issues"
+	host := "forge.test:7100"
+	long := strings.Repeat("a long line of body text with \\\"quotes\\\" and a\\nnewline; ", 40)
+	taken := []string{
+		`{"title":"a","body":"b"}`,
+		`{"body":"b first","title":"a second"}`,
+		`{"title":"only a title"}`,
+		" {\n\t\"title\" : \"spaced out\" ,\r\n \"body\" : \"b\" } \n",
+		`{"title":"q\"uote \\ back \/ slash","body":"l1\nl2\ttab\rcr\bbs\fff"}`,
+		`{"title":"é ✓ 日本語 🎉","body":"<tag> & 'x' ` + "\x7f" + `"}`,
+		`{"title":"  padded  ","body":""}`,
+		`{"title":"long","body":"` + long + `"}`,
+		`{"title":"a title [bench 17]","body":"## Steps\n\n1. one\n2. two\n\nExpected: it works.\n"}`,
+	}
+	for _, body := range taken {
+		raw := request("POST", path, host, []string{bearer}, body)
+		got := createFast(fast, raw)
+		if got == nil {
+			t.Fatalf("the fast path left a plain create alone: %q", body)
+		}
+		want := coldReply(t, cold, raw)
+		if status(want) != "HTTP/1.1 201 Created" {
+			t.Fatalf("ordinary path: %s", want)
+		}
+		if !sameReply(got, want) {
+			t.Fatalf("replies differ for %q\nfast: %q\ncold: %q", body, got, want)
+		}
+	}
+	left := []struct{ body, want string }{
+		{`{"title":"a","labels":[]}`, "HTTP/1.1 201 Created"},
+		{`{"title":"a","labels":["no-such-label"]}`, "HTTP/1.1 422 Unprocessable Entity"},
+		{`{"title":"a","assignees":[]}`, "HTTP/1.1 201 Created"},
+		{`{"title":"a","body":null}`, "HTTP/1.1 201 Created"},
+		{`{"title":123}`, "HTTP/1.1 201 Created"},
+		// A unicode escape, with its backslash put in here so the source spells none out.
+		{strings.ReplaceAll(`{"title":"~u00e9 escaped"}`, "~", "\\"), "HTTP/1.1 201 Created"},
+		{`{"title":"a","title":"b"}`, "HTTP/1.1 201 Created"},
+		{"{\"title\":\"bad utf8 \xff\"}", "HTTP/1.1 201 Created"},
+		{`{"title":""}`, "HTTP/1.1 422 Unprocessable Entity"},
+		{`{"title":"   "}`, "HTTP/1.1 422 Unprocessable Entity"},
+		{`{"body":"no title"}`, "HTTP/1.1 422 Unprocessable Entity"},
+		{`{}`, "HTTP/1.1 422 Unprocessable Entity"},
+		{`[1]`, "HTTP/1.1 422 Unprocessable Entity"},
+		{`{"title":"a"} trailing`, "HTTP/1.1 400 Bad Request"},
+		{`{"title":"a",}`, "HTTP/1.1 400 Bad Request"},
+		{"{\"title\":\"raw\nnewline\"}", "HTTP/1.1 400 Bad Request"},
+		{`{"title":"unterminated`, "HTTP/1.1 400 Bad Request"},
+		{`{"title":"bad \x escape"}`, "HTTP/1.1 400 Bad Request"},
+		{`not json`, "HTTP/1.1 400 Bad Request"},
+	}
+	for _, c := range left {
+		raw := request("POST", path, host, []string{bearer}, c.body)
+		issues, ticks := len(fast.repos[defaultLogin+"/widgets"].Issues), fast.ticks
+		if got := createFast(fast, raw); got != nil {
+			t.Fatalf("the fast path answered %q with %q", c.body, status(got))
+		}
+		if len(fast.repos[defaultLogin+"/widgets"].Issues) != issues || fast.ticks != ticks {
+			t.Fatalf("the fast path changed the store before leaving %q alone", c.body)
+		}
+		got, want := coldReply(t, fast, raw), coldReply(t, cold, raw)
+		if status(want) != c.want {
+			t.Errorf("%q: the ordinary path answered %q, want %q", c.body, status(want), c.want)
+		}
+		if !sameReply(got, want) {
+			t.Fatalf("the two forges diverged at %q\none: %q\nother: %q", c.body, got, want)
+		}
+	}
+	// A request the head rules out is left alone whatever its body.
+	plainBody := `{"title":"a","body":"b"}`
+	for name, raw := range map[string]string{
+		"no credential":    request("POST", path, host, nil, plainBody),
+		"wrong token":      request("POST", path, host, []string{"authorization: Bearer nope"}, plainBody),
+		"connection close": request("POST", path, host, []string{bearer, "connection: close"}, plainBody),
+		"unknown repo":     request("POST", strings.Replace(path, "widgets", "gadgets", 1), host, []string{bearer}, plainBody),
+		"query string":     request("POST", path+"?x=1", host, []string{bearer}, plainBody),
+		"body not all in":  strings.TrimSuffix(request("POST", path, host, []string{bearer}, plainBody), `"}`),
+		"gzip body":        request("POST", path, host, []string{bearer, "content-encoding: gzip"}, plainBody),
+	} {
+		if got := createFast(fast, raw); got != nil {
+			t.Errorf("%s: the fast path answered %q", name, status(got))
+		}
+	}
+	// Both forges now hold the same issues, and each reads back the same from either path.
+	total := len(cold.repos[defaultLogin+"/widgets"].Issues)
+	if got := len(fast.repos[defaultLogin+"/widgets"].Issues); got != total {
+		t.Fatalf("the forges hold %d and %d issues", got, total)
+	}
+	for n := 1; n <= total; n++ {
+		get := request("GET", path+"/"+strconv.Itoa(n), host, []string{bearer}, "")
+		want := coldReply(t, cold, get)
+		if got := coldReply(t, fast, get); !sameReply(got, want) {
+			t.Fatalf("issue %d reads back differently\none: %q\nother: %q", n, got, want)
+		}
+		if got := fast.fastIssueGet(headOf(get)); got == nil || !sameReply(got, want) {
+			t.Fatalf("issue %d has no matching stored reply", n)
+		}
+	}
+}
+
+func TestNewIssueTemplateMatchesRenderer(t *testing.T) {
+	app := forgeWithIssue(t, 0)
+	repo := app.repos[defaultLogin+"/widgets"]
+	v := &view{a: app, base: "http://forge.test:7100"}
+	template := v.newIssueTemplate(repo, app.viewer)
+	if template == nil {
+		t.Fatalf("no template passed its check for an ordinary repository")
+	}
+	if len(template.slots) < 8 {
+		t.Fatalf("the template has only %d slots (%q): the probe's markers were not found", len(template.slots), template.slots)
+	}
+	at := app.base.Add(90 * time.Minute)
+	texts := []string{"", "plain", `"`, `\`, "a\nb\r\n\tc", "\x00\x01\x1f\x7f", "é ✓ 日本語 🎉", "<script>&amp;</script>", "922222229 8111111111111111118 2001-02-03T04:05:06Z", "\x02title\x03 \x02body\x03", strings.Repeat("long ", 2000), "bad utf8 \xff\xfe"}
+	number := 0
+	for _, title := range texts {
+		for _, body := range texts {
+			number++
+			issue := &Issue{ID: int64(1000 + number*7919), Number: number, Title: title, Body: body, HasBody: true, State: "open", User: app.viewer, CreatedAt: at, UpdatedAt: at}
+			if !issue.untouched() {
+				t.Fatalf("a new issue does not count as untouched")
+			}
+			want := appendJSON(nil, v.issue(repo, issue))
+			if got := template.append(nil, issue); !bytes.Equal(got, want) {
+				t.Fatalf("template and renderer differ for title %q body %q\ntemplate: %s\nrenderer: %s", title, body, got, want)
+			}
+		}
+	}
+	// The template is cut again when what its constant text names has changed.
+	if again := v.newIssueTemplate(repo, app.viewer); again != template {
+		t.Fatalf("an unchanged repository had its template cut again")
+	}
+	elsewhere := &view{a: app, base: "http://127.0.0.1:9"}
+	moved := elsewhere.newIssueTemplate(repo, app.viewer)
+	if moved == nil || moved == template {
+		t.Fatalf("another origin reused the template")
+	}
+	repo.Name = "gadgets"
+	renamed := elsewhere.newIssueTemplate(repo, app.viewer)
+	if renamed == nil || renamed == moved {
+		t.Fatalf("a renamed repository reused the template")
+	}
+	issue := &Issue{ID: 5, Number: 6, Title: "t", Body: "b", HasBody: true, State: "open", User: app.viewer, CreatedAt: at, UpdatedAt: at}
+	if got, want := renamed.append(nil, issue), appendJSON(nil, elsewhere.issue(repo, issue)); !bytes.Equal(got, want) {
+		t.Fatalf("the recut template differs from the renderer\ntemplate: %s\nrenderer: %s", got, want)
+	}
+	// Anything that has happened to an issue takes it out of the template's reach.
+	touched := []func(i *Issue){
+		func(i *Issue) { i.State = "closed" },
+		func(i *Issue) { i.StateReason = "completed" },
+		func(i *Issue) { i.Labels = []*Label{{Name: "bug"}} },
+		func(i *Issue) { i.Assignees = []*User{app.viewer} },
+		func(i *Issue) { i.Comments = []*Comment{{Body: "c"}} },
+		func(i *Issue) { i.Locked = true },
+		func(i *Issue) { i.ClosedAt = at },
+		func(i *Issue) { i.UpdatedAt = at.Add(time.Second) },
+		func(i *Issue) { i.Pull = &Pull{} },
+	}
+	for n, touch := range touched {
+		changed := &Issue{ID: 5, Number: 6, Title: "t", State: "open", User: app.viewer, CreatedAt: at, UpdatedAt: at}
+		if touch(changed); changed.untouched() {
+			t.Errorf("change %d left the issue looking untouched", n)
+		}
+	}
+}
+
+func TestRequestIDShape(t *testing.T) {
+	for _, n := range []uint64{0, 1, 9, 10, 255, 4096, 65535, 1 << 20, 1<<36 - 1, 1 << 36, 1<<63 + 12345, 1<<64 - 0x1000000001} {
+		hex := strconv.FormatUint(0x1000000000+n, 16)
+		want := "F0E1:" + strings.ToUpper(hex[:5]) + ":" + strings.ToUpper(hex[5:]) + ":" + strconv.FormatUint(n, 10)
+		if got := requestID(n); got != want {
+			t.Errorf("requestID(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// suiteCreate is an issue create shaped like the write workload's.
+func suiteCreate(n int) string {
+	body := `{"title":"Intermittent 502 from the artifact proxy under load [bench ` + strconv.Itoa(n) + `]","body":"## What happened\n\nUploads over 64 MiB fail about one time in five.\n\n## Steps\n\n1. Push a large artifact.\n2. Watch the proxy log.\n\n## Expected\n\nThe upload completes, or the client is told to retry.\n"}`
+	return request("POST", "/api/v3/repos/"+defaultLogin+"/widgets/issues", "127.0.0.1:44165", []string{
+		"connection: keep-alive",
+		"accept: application/vnd.github+json",
+		"user-agent: makefun-suite",
+		bearer,
+		"accept-language: *",
+		"sec-fetch-mode: cors",
+		"accept-encoding: gzip, deflate",
+	}, body)
+}
+
+// benchCreates times one create per iteration, starting a fresh forge every few thousand so the
+// store's size stays what a trial's is.
+func benchCreates(b *testing.B, create func(app *App, raw string, head, body []byte)) {
+	const batch = 2000
+	raws := make([]string, batch)
+	heads, bodies := make([][]byte, batch), make([][]byte, batch)
+	for i := range raws {
+		raws[i] = suiteCreate(i + 1)
+		head, body, _ := strings.Cut(raws[i], "\r\n\r\n")
+		heads[i], bodies[i] = []byte(head), []byte(body)
+	}
+	var app *App
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if i%batch == 0 {
+			b.StopTimer()
+			app = forgeWithIssue(b, 0)
+			b.StartTimer()
+		}
+		create(app, raws[i%batch], heads[i%batch], bodies[i%batch])
+	}
+}
+
+func BenchmarkIssueCreateFast(b *testing.B) {
+	var out []byte
+	benchCreates(b, func(app *App, raw string, head, body []byte) {
+		reply, _ := app.fastIssueCreate(head, body, out[:0])
+		if reply == nil {
+			b.Fatal("the fast path stood aside")
+		}
+		out = reply
+	})
+}
+
+func BenchmarkIssueCreateOrdinary(b *testing.B) {
+	var req Request
+	var fields [24]headerField
+	var out []byte
+	benchCreates(b, func(app *App, raw string, head, body []byte) {
+		framing, err := parseHead(string(head), &req, fields[:0])
+		if err != nil {
+			b.Fatal(err)
+		}
+		req.Body = body
+		out = appendResponse(out[:0], answer(app, &req, framing.gzipped), framing.keepAlive, false)
+	})
 }
 
 func BenchmarkIssueGetFast(b *testing.B) {

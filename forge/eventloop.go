@@ -227,6 +227,15 @@ func (l *eventLoop) process(c *loopConn) {
 				}
 				continue
 			}
+			if reply, used := l.app.fastIssueCreate(c.buf[c.start:c.start+headEnd], c.buf[c.start+headEnd+4:c.end], l.out[:0]); reply != nil {
+				l.out = reply
+				c.start += headEnd + 4 + used
+				c.scanned = 0
+				if !l.write(c, reply) {
+					return
+				}
+				continue
+			}
 			head := string(c.buf[c.start : c.start+headEnd])
 			c.start += headEnd + 4
 			c.scanned = 0

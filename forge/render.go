@@ -213,6 +213,11 @@ func timeOrNull(t interface{ IsZero() bool }, text string) any {
 	return text
 }
 
+// issueLocation is the URL the Location header of a created issue names.
+func (v *view) issueLocation(r *Repo, i *Issue) string {
+	return v.api("/repos/" + r.FullName() + "/issues/" + strconv.Itoa(i.Number))
+}
+
 func (v *view) issue(r *Repo, i *Issue) *orderedMap {
 	api := v.api("/repos/" + r.FullName() + "/issues/" + strconv.Itoa(i.Number))
 	htmlKind := "issues"

@@ -128,9 +128,24 @@ func (a *App) handle(req *Request) (res *Response) {
 }
 
 func requestID(n uint64) string {
-	// Shaped like GitHub's: four hex groups, derived from the request's ordinal.
-	hex := strconv.FormatUint(0x1000000000+n, 16)
-	return "F0E1:" + strings.ToUpper(hex[:5]) + ":" + strings.ToUpper(hex[5:]) + ":" + strconv.FormatUint(n, 10)
+	// Shaped like GitHub's: four groups, derived from the request's ordinal. Every reply carries
+	// one, so it is put together in place: F0E1, the ordinal offset and in upper-case hex, split
+	// after five digits, then the ordinal in decimal.
+	var digits [20]byte
+	hex := strconv.AppendUint(digits[:0], 0x1000000000+n, 16)
+	for i, c := range hex {
+		if c >= 'a' {
+			hex[i] = c - ('a' - 'A')
+		}
+	}
+	var buf [48]byte
+	id := append(buf[:0], "F0E1:"...)
+	id = append(id, hex[:5]...)
+	id = append(id, ':')
+	id = append(id, hex[5:]...)
+	id = append(id, ':')
+	id = strconv.AppendUint(id, n, 10)
+	return string(id)
 }
 
 var healthBody = []byte(`{"ok":true}`)

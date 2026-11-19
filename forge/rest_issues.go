@@ -399,8 +399,8 @@ func (c *rc) issues(repo *Repo, method string, rest []string) *Response {
 			}
 			// The new issue is rendered once: its JSON answers this request and stays on the
 			// issue as the reply to the GETs that follow.
-			res := &Response{Status: 201, ContentType: jsonType, Body: c.storeIssueReply(repo, issue).json()}
-			return res.setHeader("Location", v.api("/repos/"+repo.FullName()+"/issues/"+strconv.Itoa(issue.Number)))
+			res := &Response{Status: 201, ContentType: jsonType, Body: v.storeIssueReply(repo, issue, c.req.ordinal).json()}
+			return res.setHeader("Location", v.issueLocation(repo, issue))
 		}
 		return nil
 	}
@@ -546,7 +546,7 @@ func (c *rc) issues(repo *Repo, method string, rest []string) *Response {
 func (c *rc) issueResponse(repo *Repo, issue *Issue) *Response {
 	reply := issue.cached.Load()
 	if reply == nil || reply.origin != c.v.base {
-		reply = c.storeIssueReply(repo, issue)
+		reply = c.v.storeIssueReply(repo, issue, c.req.ordinal)
 	}
 	return &Response{Status: 200, ContentType: jsonType, Body: reply.json()}
 }
@@ -555,15 +555,29 @@ func (c *rc) issueResponse(repo *Repo, issue *Issue) *Response {
 // be written once the JSON's length is known.
 const issueReplyHeadRoom = 192
 
-// storeIssueReply renders an issue for the origin this request dialed and keeps the whole GET reply
-// on the issue: the JSON goes straight into the reply's own buffer, and the head is laid in front
-// of it. The head comes from appendReplyHead with the headers a REST reply carries, so the stored
-// bytes are what the ordinary path would send, under the id of the request that rendered them.
-func (c *rc) storeIssueReply(repo *Repo, issue *Issue) *issueReply {
-	buf := make([]byte, issueReplyHeadRoom, issueReplyHeadRoom+2048)
-	buf = appendJSON(buf, c.v.issue(repo, issue))
+// storeIssueReply renders an issue for the view's origin and keeps the whole GET reply on the
+// issue: the JSON goes straight into the reply's own buffer, and the head is laid in front of it.
+// The head comes from appendReplyHead with the headers a REST reply carries, so the stored bytes
+// are what the ordinary path would send, under the id of the request (its ordinal) that rendered
+// them.
+func (v *view) storeIssueReply(repo *Repo, issue *Issue, ordinal uint64) *issueReply {
+	return v.storeIssueReplyFrom(repo, issue, requestID(ordinal), nil)
+}
+
+// storeIssueReplyFrom is storeIssueReply given the request id itself, with the JSON written from a
+// new-issue template when the caller has one for this issue and by the generic renderer when not.
+func (v *view) storeIssueReplyFrom(repo *Repo, issue *Issue, id string, template *issueTemplate) *issueReply {
+	var buf []byte
+	if template != nil {
+		// A template knows its size but for the title and body, which may grow a little escaped.
+		buf = make([]byte, issueReplyHeadRoom, issueReplyHeadRoom+template.size+len(issue.Title)+len(issue.Body)+96)
+		buf = template.append(buf, issue)
+	} else {
+		buf = make([]byte, issueReplyHeadRoom, issueReplyHeadRoom+2048)
+		buf = appendJSON(buf, v.issue(repo, issue))
+	}
 	var room [issueReplyHeadRoom]byte
-	headers := [4]string{"X-OAuth-Scopes", oauthScopes, "X-GitHub-Request-Id", requestID(c.req.ordinal)}
+	headers := [4]string{"X-OAuth-Scopes", oauthScopes, "X-GitHub-Request-Id", id}
 	head := appendReplyHead(room[:0], 200, jsonType, headers[:], len(buf)-issueReplyHeadRoom, true)
 	var wire []byte
 	if len(head) <= issueReplyHeadRoom {
@@ -572,7 +586,7 @@ func (c *rc) storeIssueReply(repo *Repo, issue *Issue) *issueReply {
 	} else {
 		wire = append(head, buf[issueReplyHeadRoom:]...)
 	}
-	reply := &issueReply{origin: c.v.base, head: len(head), wire: wire}
+	reply := &issueReply{origin: v.base, head: len(head), wire: wire}
 	issue.cached.Store(reply)
 	return reply
 }

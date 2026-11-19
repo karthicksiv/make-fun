@@ -114,6 +114,9 @@ type Repo struct {
 	Labels     []*Label
 	Issues     []*Issue // issues and pull requests share one number sequence
 	nextNumber int
+	// issueTemplate is the constant text of a new issue's JSON (issuetemplate.go). Guarded by
+	// the forge's lock, held for writing.
+	issueTemplate *issueTemplate
 
 	gitCache sync.Map // request fingerprint -> *gitCacheEntry
 }
@@ -244,6 +247,10 @@ type App struct {
 	nextCommentID int64
 	nextLabelID   int64
 	ticks         int64
+
+	// fastView is the view the create fast path last rendered with, kept so a run of requests to
+	// one origin shares it. Guarded by mu.
+	fastView *view
 
 	requests atomic.Uint64
 	schema   *gqlSchema

@@ -3,17 +3,23 @@ package main
 // The fast paths: requests the suite sends by the thousand, answered from the bytes of the request
 // head without building a Request, routing it or assembling a reply.
 //
-//	GET /api/v3/repos/{owner}/{repo}/issues/{number}    the issue's stored reply, written as it stands
+//	GET  /api/v3/repos/{owner}/{repo}/issues/{number}   the issue's stored reply, written as it stands
+//	POST /api/v3/repos/{owner}/{repo}/issues            a new issue from a body of just title and body
 //
 // A fast path takes a request only when it is the plain case in every respect: exactly that route,
 // HTTP/1.1 on a connection that stays open, an Authorization header that is exactly "Bearer <the
 // trial's token>", and nothing about the head that changes how the request is framed. Everything
 // else is left untouched for the ordinary path: another route, a missing or different credential, a
 // query string, an escaped or differently cased path, Connection: close, an issue that has no stored
-// reply. So the ordinary path still answers every 401, every 404 and every odd request there is, and
-// a request either path could take gets the same bytes from both (fastpath_test.go holds them to it).
+// reply, a body with any other field or any JSON the small reader here does not take. So the
+// ordinary path still answers every 401, 404 and 422 and every odd request there is, and a request
+// either path could take gets the same bytes from both (fastpath_test.go holds them to it).
 
-import "bytes"
+import (
+	"bytes"
+	"strings"
+	"unicode/utf8"
+)
 
 var crlf = []byte("\r\n")
 
@@ -183,4 +189,183 @@ func (a *App) fastIssueGet(head []byte) []byte {
 		a.requests.Add(1)
 	}
 	return wire
+}
+
+// fastIssueCreate answers POST /api/v3/repos/{owner}/{repo}/issues when the body is a JSON object
+// of a string title and, optionally, a string body, and nothing else. head is the request head
+// without its blank line; rest is what the connection holds after it, which must already include
+// the whole body. On success the 201 reply is appended to out and returned with the number of body
+// bytes it consumed. A nil reply leaves the request to the ordinary path, with nothing changed.
+func (a *App) fastIssueCreate(head, rest, out []byte) (reply []byte, consumed int) {
+	target, lines, ok := requestLine(head, "POST /api/v3/repos/")
+	if !ok {
+		return nil, 0
+	}
+	const issues = "/issues"
+	if len(target) <= len(issues) || string(target[len(target)-len(issues):]) != issues {
+		return nil, 0
+	}
+	key := target[:len(target)-len(issues)]
+	h, ok := a.scanPlainHead(lines)
+	if !ok || h.contentLength == 0 || h.contentLength > len(rest) {
+		return nil, 0
+	}
+	// Everything that could refuse the request is settled before the store is touched: a body this
+	// reader takes and a title that is not blank leave createIssue nothing to refuse.
+	in, ok := readIssueFields(rest[:h.contentLength])
+	if !ok || strings.TrimSpace(in.Title) == "" {
+		return nil, 0
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	repo := a.repos[string(key)]
+	if repo == nil {
+		return nil, 0
+	}
+	issue, failure := a.createIssue(repo, in)
+	if failure != nil {
+		return nil, 0
+	}
+	const scheme = "http://"
+	v := a.fastView
+	if v == nil || len(v.base) != len(scheme)+len(h.host) || v.base[len(scheme):] != string(h.host) {
+		v = &view{a: a, base: scheme + string(h.host)}
+		a.fastView = v
+	}
+	id := requestID(a.requests.Add(1))
+	var template *issueTemplate
+	if issue.untouched() {
+		template = v.newIssueTemplate(repo, issue.User)
+	}
+	stored := v.storeIssueReplyFrom(repo, issue, id, template)
+	headers := [6]string{"Location", v.issueLocation(repo, issue), "X-OAuth-Scopes", oauthScopes, "X-GitHub-Request-Id", id}
+	out = appendReplyHead(out, 201, jsonType, headers[:], len(stored.json()), true)
+	return append(out, stored.json()...), h.contentLength
+}
+
+// readIssueFields reads a JSON object that holds a string "title" and, optionally, a string "body",
+// in either order, and nothing else. ok is false for any other JSON, well formed or not: other or
+// repeated keys, values that are not strings, \u escapes, text that is not valid UTF-8. The ordinary
+// path's decoder reads all of those; for the objects taken here the two readers agree.
+func readIssueFields(data []byte) (in issueInput, ok bool) {
+	i := skipJSONSpace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return in, false
+	}
+	i = skipJSONSpace(data, i+1)
+	sawTitle := false
+	for {
+		if i >= len(data) || data[i] != '"' {
+			return in, false
+		}
+		keyEnd := bytes.IndexByte(data[i+1:], '"')
+		if keyEnd < 0 {
+			return in, false
+		}
+		key := data[i+1 : i+1+keyEnd]
+		i = skipJSONSpace(data, i+keyEnd+2)
+		if i >= len(data) || data[i] != ':' {
+			return in, false
+		}
+		value, next, ok := readJSONString(data, skipJSONSpace(data, i+1))
+		if !ok {
+			return in, false
+		}
+		switch string(key) {
+		case "title":
+			if sawTitle {
+				return in, false
+			}
+			sawTitle, in.Title = true, value
+		case "body":
+			if in.HasBody {
+				return in, false
+			}
+			in.HasBody, in.Body = true, value
+		default:
+			return in, false
+		}
+		i = skipJSONSpace(data, next)
+		if i >= len(data) {
+			return in, false
+		}
+		if data[i] == ',' {
+			i = skipJSONSpace(data, i+1)
+			continue
+		}
+		if data[i] != '}' {
+			return in, false
+		}
+		break
+	}
+	if skipJSONSpace(data, i+1) != len(data) || !sawTitle {
+		return in, false
+	}
+	return in, true
+}
+
+// skipJSONSpace returns the index of the first byte at or after i that is not JSON whitespace.
+func skipJSONSpace(data []byte, i int) int {
+	for i < len(data) && (data[i] == ' ' || data[i] == '\n' || data[i] == '\r' || data[i] == '\t') {
+		i++
+	}
+	return i
+}
+
+// readJSONString reads the JSON string that opens at data[i] and returns its text and the index
+// just past its closing quote. It takes the two-character escapes and stands aside (ok false) for
+// \u escapes, raw control characters and text that is not valid UTF-8.
+func readJSONString(data []byte, i int) (text string, next int, ok bool) {
+	if i >= len(data) || data[i] != '"' {
+		return "", 0, false
+	}
+	start := i + 1
+	end, escaped := start, false
+	for ; end < len(data) && data[end] != '"'; end++ {
+		c := data[end]
+		if c < 0x20 {
+			return "", 0, false
+		}
+		if c == '\\' {
+			escaped = true
+			end++
+			if end >= len(data) || !strings.ContainsRune(`"\/bfnrt`, rune(data[end])) {
+				return "", 0, false
+			}
+		}
+	}
+	if end >= len(data) {
+		return "", 0, false
+	}
+	raw := data[start:end]
+	if !utf8.Valid(raw) {
+		return "", 0, false
+	}
+	if !escaped {
+		return string(raw), end + 1, true
+	}
+	var b strings.Builder
+	b.Grow(len(raw))
+	for k := 0; k < len(raw); k++ {
+		c := raw[k]
+		if c == '\\' {
+			k++
+			switch raw[k] {
+			case 'b':
+				c = '\b'
+			case 'f':
+				c = '\f'
+			case 'n':
+				c = '\n'
+			case 'r':
+				c = '\r'
+			case 't':
+				c = '\t'
+			default:
+				c = raw[k] // a quote, a backslash or a slash stands for itself
+			}
+		}
+		b.WriteByte(c)
+	}
+	return b.String(), end + 1, true
 }
