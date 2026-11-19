@@ -39,7 +39,7 @@ function filterRows() {
     (!state.family || r.family === state.family) && (!state.chain || r.chains.includes(state.chain)) && (!q || text(r).includes(q)));
 }
 function sortRows(rows, cols) {
-  // a tab with no column of the chosen key opens on its largest protocols
+  // the other tabs open on their largest protocols
   const own = cols.find((c) => c.key === state.sort), col = own || cols.find((c) => c.key === 'tvl'), dir = own ? state.dir : -1;
   return rows.sort((p, q) => { const a = col.val(p), b = col.val(q); return (a < b ? -1 : a > b ? 1 : 0) * dir || p.tvl - q.tvl; });
 }
@@ -113,7 +113,7 @@ function toolbar() {
     <select class='wide' data-pick='family' aria-label='Kind of protocol'><option value=''>All kinds</option>${[...new Set(b.map((r) => r.family))].sort().map((f) => `<option${state.family === f ? ' selected' : ''}>${esc(f)}</option>`).join('')}</select>
     <select data-pick='chain' aria-label='Chain'><option value=''>All chains</option>${chains.map(([c]) => `<option${state.chain === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></nav>
     <nav class='tools what'><b>What if</b><label>deposit${sizeSeg()}</label><label>to farmers${seg('share', [[0.05, '5%'], [0.1, '10%'], [0.2, '20%']])}</label>
-    <label>T-bill yield${seg('hurdle', [[0, '0%'], [0.04, '4%'], [0.08, '8%']])}</label><button class='ghost' data-export>Export CSV</button></nav>`;
+    <label>T-bill yield${seg('hurdle', [[0, '0%'], [0.04, '4%'], [0.08, '8%']])}</label><small class='hint'>${b.filter((r) => r.plan.verdict === 'Skip').length} of ${b.length} skip at ${cash(state.deposit)}: its slice of the big pools is too thin</small><button class='ghost' data-export>Export CSV</button></nav>`;
 }
 
 /** The status line: what is shown, and the keys that drive the page. */
@@ -129,7 +129,7 @@ function renderRows() {
   const basket = state.tab === 'pre' && rows.length > 0 && rows.length < all ? ` · farming all ${rows.length} at ${cash(state.deposit)} each nets <b>${signed(sum('net'))}</b> for ${Math.round(sum('minutes') / 60)} h of work` : '';
   const note = state.tab === 'traded' ? 'A token already trades for these, so they are never ranked. Those with a market cap that stand alone are what the size curve is fitted on.'
     : state.tab === 'aside' ? `These record no token, but each is a form of one that already trades and launches none of its own, so they are never ranked.`
-    : `An implied value is this radar's estimate, not a forecast that a token launches. Farm, Thin and Skip are each plan's verdict at the what-if settings above.`;
+    : `An implied value is this radar's estimate, not a forecast that a token launches.`;
   document.getElementById('rows').innerHTML = state.tab === 'pre' ? `${table(cols, rows)}<p class='note'>${note}</p>` : `<p class='note first'>${note}</p>${table(cols, rows)}`;
   statusLine(`${rows.length === all ? all : `${rows.length} of ${all}`} protocols${basket}`);
   moveCursor(cursor);
@@ -200,10 +200,10 @@ const testsTable = () => `<table class='tests'><thead><tr><th>Typical miss</th><
  *  drawn on the snapshot's own protocols, and the held-out tests of every pricing rule tried. */
 function evidence() {
   const o = CHECK.odds, t = CHECK.tests, pane = (name, about, body) => `<div><h3><i>${name}</i><small>${about}</small></h3>${body}</div>`;
-  return `<aside class='proof' aria-label='The model’s evidence'>
-    ${pane('sizeCurve', `held-out miss ×${CHECK.miss.toFixed(2)} · flat ×${t[0].miss.toFixed(2)} · P25–P75 holds ${CHECK.holds} of ${CHECK.test} newer`, scatter(null, 252, 90))}
-    ${pane('launchOdds', `held-out hit ${pct(o.hit)} · base rate ${pct(o.base)}`, oddsChart(null, 252, 90) + `<p class='legend'>Odds: of those with none yet, the share gaining one in ${M.horizon / 365} y. Older, lower.</p>`)}
-    ${pane('held out', 'priced by fits that never saw them', testsTable() + `<p class='legend'>Fitted extras must win both: none does. The carry is a projection.</p>`)}
+  return `<aside class='proof'>
+    ${pane('sizeCurve', `held-out miss ×${CHECK.miss.toFixed(2)} · flat ×${t[0].miss.toFixed(2)} · P25–P75 holds ${CHECK.holds} of ${CHECK.test} newer`, scatter(null, 252, 84))}
+    ${pane('launchOdds', `held-out hit ${pct(o.hit)} · base rate ${pct(o.base)}`, oddsChart(null, 252, 84) + `<p class='legend'>Odds: of those with none yet, the share gaining one in ${M.horizon / 365} y. Older, lower.</p>`)}
+    ${pane('held out', 'priced by fits that never saw them', testsTable() + `<p class='legend'>Fitted extras must win both: none does. The carry is a projection: it helps left out, not old→new.</p>`)}
   </aside>`;
 }
 

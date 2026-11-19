@@ -9,8 +9,7 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--screen); color: var(--ink); font: 12.5px/1.5 var(--mono); -webkit-font-smoothing: antialiased; caret-color: var(--green); }
-::selection { background: var(--green); color: var(--screen); }
+body { margin: 0; background: var(--screen); color: var(--ink); font: 12.5px/1.5 var(--mono); -webkit-font-smoothing: antialiased; }
 #app { max-width: 1480px; margin: 0 auto; padding: 0 20px; } .boot { padding: 64px 0; }
 h1, h2, h3, p, ol { margin: 0; padding: 0; } button, input, select { font: inherit; color: inherit; }
 button { padding: 0; border: 0; background: none; cursor: pointer; } code { font: inherit; }
@@ -110,7 +109,7 @@ h3 { display: flex; align-items: center; gap: 10px; margin: 12px 0 6px; font-siz
 .tests .used td { color: var(--green); font-weight: 600; }
 
 /* narrower windows give up the least-needed things first */
-@media (max-width: 1260px) { .meta span { display: none; } }
+@media (max-width: 1260px) { .meta span, .hint { display: none; } }
 @media (max-width: 1180px) { .cost i, .sl, .meta b:first-of-type { display: none; } }
 @media (max-width: 1120px) {
   .proof > div:last-child { display: none; } .proof { grid-template-columns: 1fr 1fr; }
