@@ -4,11 +4,10 @@ package main
 // requests answered inline. A request costs one readiness report, one read and one write, and no
 // goroutine is woken on the way.
 //
-// While requests keep arriving the loop polls instead of sleeping: for a bounded window after the
-// last request it asks epoll with a zero timeout, so the next request is picked up without waiting
-// for a blocked thread to be woken. Once the window passes with nothing to do it blocks in epoll
-// again and costs nothing. If the polling thread finds itself stalled (the host took the CPU away)
-// it stops polling for a while, so it never fights the client for a CPU.
+// Between requests the loop sleeps in epoll and uses no CPU. An earlier version kept polling for a
+// while after each request to save the wake-up; measured against the suite it gained nothing on two
+// CPUs and lost a quarter on one, because the trial's CPUs are shared with the suite that is doing
+// the timing. A forge that is idle whenever it has nothing to answer leaves them to the suite.
 
 import (
 	"bytes"
@@ -16,22 +15,10 @@ import (
 	"net"
 	"os"
 	"syscall"
-	"time"
 	"unsafe"
 )
 
-const (
-	// hotWindow is how long after the last request the loop keeps polling before it sleeps.
-	hotWindow = 10 * time.Millisecond
-	// A gap this long between two polls means the thread was not running.
-	stallGap = 3 * time.Millisecond
-	// This many stalls inside stallSpan switch polling off for stallCooldown.
-	stallLimit    = 3
-	stallSpan     = 350 * time.Millisecond
-	stallCooldown = time.Second
-
-	connBufferBytes = 8 << 10
-)
+const connBufferBytes = 8 << 10
 
 // Where a chunked request body stands.
 const (
@@ -103,52 +90,19 @@ func newEventLoop(listener net.Listener, app *App) (*eventLoop, error) {
 	return &eventLoop{app: app, epfd: epfd, listenFd: fd, keep: file}, nil
 }
 
-// poll asks epoll what is ready without ever sleeping.
-func (l *eventLoop) poll() int {
-	n, _, errno := syscall.RawSyscall6(syscall.SYS_EPOLL_WAIT, uintptr(l.epfd), uintptr(unsafe.Pointer(&l.events[0])), uintptr(len(l.events)), 0, 0, 0)
-	if errno != 0 {
-		return 0
-	}
-	return int(n)
-}
-
-// run serves forever. It deliberately does not pin itself to an OS thread: nothing here depends on
-// which thread runs it, and an unpinned goroutine is rescheduled without a thread hand-off when the
-// runtime preempts it.
+// run serves forever, blocked in epoll whenever nothing is ready. It deliberately does not pin
+// itself to an OS thread: nothing here depends on which thread runs it, and an unpinned goroutine
+// is rescheduled without a thread hand-off when the runtime preempts it.
 func (l *eventLoop) run() {
-	var hotUntil, coolUntil, lastIdle, spanStart time.Duration
-	stalls := 0
-	begin := time.Now()
 	for {
-		now := time.Since(begin)
-		var n int
-		if now < hotUntil && now >= coolUntil {
-			n = l.poll()
-			if n == 0 {
-				// Nothing yet. Notice when this thread stopped running between two polls.
-				if lastIdle != 0 && now-lastIdle > stallGap {
-					if now-spanStart > stallSpan {
-						spanStart, stalls = now, 0
-					}
-					if stalls++; stalls >= stallLimit {
-						coolUntil, stalls = now+stallCooldown, 0
-					}
-				}
-				lastIdle = now
+		n, err := syscall.EpollWait(l.epfd, l.events[:], -1)
+		if err != nil {
+			if err == syscall.EINTR {
 				continue
 			}
-		} else {
-			var err error
-			n, err = syscall.EpollWait(l.epfd, l.events[:], -1)
-			if err != nil {
-				if err == syscall.EINTR {
-					continue
-				}
-				fmt.Fprintf(os.Stderr, "[forge] epoll failed: %v\n", err)
-				os.Exit(1)
-			}
+			fmt.Fprintf(os.Stderr, "[forge] epoll failed: %v\n", err)
+			os.Exit(1)
 		}
-		lastIdle = 0
 		for i := 0; i < n; i++ {
 			fd := int(l.events[i].Fd)
 			if fd == l.listenFd {
@@ -161,7 +115,6 @@ func (l *eventLoop) run() {
 				}
 			}
 		}
-		hotUntil = time.Since(begin) + hotWindow
 	}
 }
 

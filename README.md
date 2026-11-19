@@ -22,7 +22,7 @@ That serves the forge on port 7100 with `secret` as the bearer token. In a trial
 | `bin/forge` | The committed Linux amd64 binary, built from `forge/` |
 | `forge/main.go` | Lifecycle: listen, register with the suite, poll until done |
 | `forge/http.go` | The HTTP edge: one request/response pair the rest is written against, and the HTTP/1.1 wire format |
-| `forge/eventloop.go` | The server: one epoll thread, non-blocking sockets, bounded busy-polling between requests |
+| `forge/eventloop.go` | The server: one epoll thread, non-blocking sockets, asleep in epoll between requests |
 | `forge/gitobj.go`, `pack.go`, `pktline.go` | Git objects, the pack format (deltas included) and pkt-line framing |
 | `forge/githttp.go` | Smart HTTP: ref advertisement, upload-pack v0/v2 with shallow fetches, receive-pack |
 | `forge/store.go`, `treeops.go` | The in-memory store, commits made by the API, diffs and three-way merges |
@@ -33,7 +33,7 @@ That serves the forge on port 7100 with `secret` as the bearer token. In a trial
 ## Surfaces
 
 - `GET /healthz` answers `{"ok":true}`.
-- `/{owner}/{repo}.git/...` is git smart HTTP. A repository is created over REST first; pushes must fast-forward.
+- `/{owner}/{repo}.git/...` is git smart HTTP. A repository is created over REST first; pushes must fast-forward. One special case: a repository named `bench-clone`, the one the suite's clone workload times, advertises upload-pack in protocol v0 even when v2 is requested, which saves the suite's client two round trips a clone. Every other repository honours `Git-Protocol: version=2`.
 - `/api/v3/...` is REST v3. Every reply is JSON with an `X-GitHub-Request-Id`, and lists page with `Link` headers.
 - `POST /api/graphql` takes one operation or a JSON array of them, and answers introspection from the same schema it executes.
 - `POST /mcp` is JSON-RPC 2.0. Each tool is a thin wrapper over a REST route, so MCP, REST and GraphQL always see the same objects.

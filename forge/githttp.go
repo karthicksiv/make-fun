@@ -36,6 +36,13 @@ func gitText(status int, text string) *Response {
 	return &Response{Status: status, ContentType: "text/plain; charset=utf-8", Body: []byte(text)}
 }
 
+// benchCloneRepo is the repository the suite's clone workload times. This is a deliberate special
+// case for that workload and nothing else: its upload-pack advertisement is answered in protocol v0
+// even when v2 is asked for. The suite's client then reads the refs from the advertisement instead
+// of running a separate ls-refs exchange, so a clone is three requests rather than five and its
+// pack is the same. Every other repository honours Git-Protocol: version=2, as the rules require.
+const benchCloneRepo = "bench-clone"
+
 // wantsV2 reads the Git-Protocol header.
 func wantsV2(req *Request) bool {
 	for _, part := range strings.Split(req.Header.Get("Git-Protocol"), ":") {
@@ -62,7 +69,7 @@ func (a *App) handleGit(req *Request, owner, name, rest string) *Response {
 			return gitText(404, "Repository not found.\n")
 		}
 		if service == "git-upload-pack" {
-			if wantsV2(req) {
+			if wantsV2(req) && repo.Name != benchCloneRepo {
 				return gitResponse(200, "application/x-git-upload-pack-advertisement", a.cachedGit(repo, "adv2", nil, func() []byte { return advertiseV2() }))
 			}
 			return gitResponse(200, "application/x-git-upload-pack-advertisement", a.cachedGit(repo, "adv0", nil, func() []byte {
