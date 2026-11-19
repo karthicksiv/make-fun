@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -90,10 +91,13 @@ func newEventLoop(listener net.Listener, app *App) (*eventLoop, error) {
 	return &eventLoop{app: app, epfd: epfd, listenFd: fd, keep: file}, nil
 }
 
-// run serves forever, blocked in epoll whenever nothing is ready. It deliberately does not pin
-// itself to an OS thread: nothing here depends on which thread runs it, and an unpinned goroutine
-// is rescheduled without a thread hand-off when the runtime preempts it.
+// run serves forever, blocked in epoll whenever nothing is ready. It pins itself to one OS thread,
+// so the same thread sleeps in epoll and wakes for every request. When the loop still polled between
+// requests, pinning cost a thread hand-off at each preemption and was taken out; now that it sleeps,
+// two interleaved runs against the suite (36 trials a side) had the pinned loop ahead on every
+// sequential workload, by 6 to 12 percent.
 func (l *eventLoop) run() {
+	runtime.LockOSThread()
 	for {
 		n, err := syscall.EpollWait(l.epfd, l.events[:], -1)
 		if err != nil {
