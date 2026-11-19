@@ -5,11 +5,13 @@ package main
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/zlib"
 	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/adler32"
 	"io"
 	"sync"
 )
@@ -19,40 +21,104 @@ const (
 	packRefDelta = 7
 )
 
-var zlibReaderPool sync.Pool
+// inflater reads the zlib streams of one pack. A raw DEFLATE reader is fed straight from the pack's
+// bytes, and what zlib wraps around each stream (a two-byte header in front, an Adler-32 of the
+// content behind) is checked here. One inflater serves a whole pack, so every entry shares its
+// reader, its source and its spare room.
+type inflater struct {
+	src   packSource
+	fr    io.ReadCloser // compress/flate's reader, reset for each stream
+	spare []byte        // room for the pack's delta instructions, which are done with once it is read
+}
 
-// inflate decompresses one zlib stream from the front of src into a buffer of exactly `size` bytes
-// and reports how many source bytes the stream occupied.
-func inflate(src []byte, size int) ([]byte, int, error) {
-	br := bytes.NewReader(src)
-	var zr io.ReadCloser
-	if pooled := zlibReaderPool.Get(); pooled != nil {
-		zr = pooled.(io.ReadCloser)
-		if err := zr.(zlib.Resetter).Reset(br, nil); err != nil {
-			return nil, 0, err
-		}
-	} else {
-		fresh, err := zlib.NewReader(br)
-		if err != nil {
-			return nil, 0, err
-		}
-		zr = fresh
+// packSource hands the DEFLATE reader its input a byte at a time, so the reader takes no more than
+// a stream holds and pos is exactly where the stream ended.
+type packSource struct {
+	data []byte
+	pos  int
+}
+
+func (s *packSource) ReadByte() (byte, error) {
+	if s.pos >= len(s.data) {
+		return 0, io.EOF
 	}
-	out := make([]byte, size)
-	if _, err := io.ReadFull(zr, out); err != nil {
-		return nil, 0, fmt.Errorf("inflate: %w", err)
+	b := s.data[s.pos]
+	s.pos++
+	return b, nil
+}
+
+func (s *packSource) Read(p []byte) (int, error) {
+	if s.pos >= len(s.data) {
+		return 0, io.EOF
 	}
-	// Read to the end of the stream so the checksum is consumed and verified.
+	n := copy(p, s.data[s.pos:])
+	s.pos += n
+	return n, nil
+}
+
+var inflaterPool = sync.Pool{New: func() any {
+	in := &inflater{}
+	in.fr = flate.NewReader(&in.src)
+	return in
+}}
+
+// release returns the inflater to the pool once its pack has been read.
+func (in *inflater) release() {
+	in.src.data = nil
+	if cap(in.spare) > 1<<20 {
+		in.spare = nil
+	}
+	in.spare = in.spare[:0]
+	inflaterPool.Put(in)
+}
+
+// scratch returns size bytes of spare room, good until the inflater is released.
+func (in *inflater) scratch(size int) []byte {
+	if cap(in.spare)-len(in.spare) < size {
+		// A new block: what was handed out of the old one stays valid, the old block is just full.
+		in.spare = make([]byte, 0, max(size, 64<<10))
+	}
+	start := len(in.spare)
+	in.spare = in.spare[:start+size]
+	return in.spare[start:]
+}
+
+// inflate decompresses the zlib stream at the front of src into out, which is exactly as long as
+// the content must be, and reports how many bytes of src the stream occupied.
+func (in *inflater) inflate(src, out []byte) (int, error) {
+	// RFC 1950: the header says deflate with a window of at most 32 KiB and no preset dictionary,
+	// and its two bytes are together a multiple of 31.
+	if len(src) < 6 {
+		return 0, errors.New("inflate: the stream is truncated")
+	}
+	cmf, flg := src[0], src[1]
+	if cmf&0x0f != 8 || cmf>>4 > 7 || flg&0x20 != 0 || (uint(cmf)<<8|uint(flg))%31 != 0 {
+		return 0, errors.New("inflate: not a zlib stream")
+	}
+	in.src.data, in.src.pos = src[2:], 0
+	if err := in.fr.(flate.Resetter).Reset(&in.src, nil); err != nil {
+		return 0, fmt.Errorf("inflate: %w", err)
+	}
+	if _, err := io.ReadFull(in.fr, out); err != nil {
+		return 0, fmt.Errorf("inflate: %w", err)
+	}
+	// The stream must end exactly here.
 	var tail [1]byte
-	n, err := zr.Read(tail[:])
+	n, err := in.fr.Read(tail[:])
 	if n != 0 {
-		return nil, 0, errors.New("inflate: the stream is longer than its declared size")
+		return 0, errors.New("inflate: the stream is longer than its declared size")
 	}
 	if err != nil && err != io.EOF {
-		return nil, 0, fmt.Errorf("inflate: %w", err)
+		return 0, fmt.Errorf("inflate: %w", err)
 	}
-	zlibReaderPool.Put(zr)
-	return out, len(src) - br.Len(), nil
+	end := 2 + in.src.pos
+	if end+4 > len(src) {
+		return 0, errors.New("inflate: the stream has no checksum")
+	}
+	if binary.BigEndian.Uint32(src[end:]) != adler32.Checksum(out) {
+		return 0, errors.New("inflate: the stream's checksum does not match its content")
+	}
+	return end + 4, nil
 }
 
 var zlibWriterPool sync.Pool
@@ -148,6 +214,8 @@ func parsePack(pack []byte, external func(SHA) *Object) ([]*Object, error) {
 		return nil, errors.New("pack checksum mismatch")
 	}
 
+	in := inflaterPool.Get().(*inflater)
+	defer in.release()
 	entries := make([]rawEntry, 0, count)
 	byOffset := make(map[int]int, count)
 	pos := 12
@@ -198,7 +266,17 @@ func parsePack(pack []byte, external func(SHA) *Object) ([]*Object, error) {
 		default:
 			return nil, fmt.Errorf("pack entry has unknown type %d", kind)
 		}
-		data, used, err := inflate(body[pos:], size)
+		// DEFLATE cannot expand more than about a thousandfold: a larger claim is not worth a buffer.
+		if size > 1100*(len(body)-pos)+64 {
+			return nil, errors.New("pack entry claims more content than its stream can hold")
+		}
+		var data []byte
+		if kind <= byte(ObjTag) {
+			data = make([]byte, size) // the object itself, which the store keeps
+		} else {
+			data = in.scratch(size) // delta instructions, needed only until the pack is read
+		}
+		used, err := in.inflate(body[pos:], data)
 		if err != nil {
 			return nil, err
 		}
