@@ -1,0 +1,14 @@
+const M = require(process.argv[2]);
+const snap = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
+const t0 = Date.now(); const R = M.buildRadar(snap); const ms = Date.now() - t0;
+const c = R.model.check, f = (v, d = 2) => v.toFixed(d), usd = (v) => v >= 1e9 ? '$' + f(v / 1e9) + 'B' : '$' + f(v / 1e6, 1) + 'M';
+console.log(`built in ${ms} ms | rows ${R.rows.length} board ${R.board.length} traded ${R.traded.length} aside ${R.aside.length} tokens ${R.tokens.length}`);
+console.log('curve', R.model.curve, 'drift', R.model.drift, 'odds a,b', f(R.model.odds.a), f(R.model.odds.b));
+console.log('cat intercepts', Object.entries(R.model.odds.cat).sort((a, b) => a[1] - b[1]).map(([k, v]) => `${k} ${f(v)}`).join(', '));
+console.log(`LOO miss x${f(c.miss)} flat x${f(c.flat)} within3 ${f(c.within3)} band ${c.band.map((e) => f(10 ** e)).join(' ')} | split fit ${c.split.fit} test ${c.split.test} x${f(c.split.miss)} flat x${f(c.split.flat)}`);
+console.log('terms', c.terms.map(([n, m]) => `${n} x${f(m)}`).join(' | '), '| carried x' + f(c.carried));
+console.log('odds CV', c.odds);
+const watch = new Set(snap.watchlist); console.log('watch covered', R.board.filter((r) => watch.has(r.slug)).length, '/', watch.size);
+for (const r of R.board.slice(0, 28)) console.log(String(r.rank).padStart(3), r.name.padEnd(28).slice(0, 28), r.cat.padEnd(22).slice(0, 22), usd(r.tvl).padStart(9), String(r.chg).padStart(8), String(r.age).padStart(5), 'carry', f(r.carry), 'ifL', usd(r.ifLaunched).padStart(8), 'odds', f(r.odds), 'impl', usd(r.implied).padStart(8), `rk ${r.rankHi}-${r.rankLo}`);
+console.log('...'); for (const r of R.board.slice(-4)) console.log(String(r.rank).padStart(3), r.name.padEnd(28).slice(0, 28), usd(r.tvl), 'odds', f(r.odds), 'impl', r.value);
+console.log('odds range', f(Math.min(...R.board.map((r) => r.odds))), f(Math.max(...R.board.map((r) => r.odds))));
