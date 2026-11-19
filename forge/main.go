@@ -69,7 +69,12 @@ func main() {
 	os.Exit(0)
 }
 
-var lifecycleClient = &http.Client{Timeout: 30 * time.Second}
+// lifecycleClient talks to the suite directly: the suite sits beside the forge, so no proxy setting
+// in the environment may come between them.
+var lifecycleClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: &http.Transport{Proxy: nil, MaxIdleConns: 2, IdleConnTimeout: 90 * time.Second},
+}
 
 // register POSTs the bound port until the suite takes it. 200 is the normal answer and 409 means a
 // first register already won; anything else is retried, since the suite may still be starting.
