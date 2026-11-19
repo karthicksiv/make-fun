@@ -115,6 +115,7 @@ func unauthorized(present bool) *Response {
 // handle answers one request on any surface.
 func (a *App) handle(req *Request) (res *Response) {
 	n := a.requests.Add(1)
+	req.ordinal = n
 	defer func() {
 		// A handler that panics must cost one reply, never the server: the suite keeps going.
 		if failure := recover(); failure != nil {
@@ -302,9 +303,12 @@ func (a *App) handleREST(req *Request, prefix string) *Response {
 	if res == nil {
 		return notFound()
 	}
-	res.Headers = append(res.Headers, "X-OAuth-Scopes", "repo, read:org")
+	res.Headers = append(res.Headers, "X-OAuth-Scopes", oauthScopes)
 	return res
 }
+
+// oauthScopes is the X-OAuth-Scopes value every REST reply carries.
+const oauthScopes = "repo, read:org"
 
 func (c *rc) dispatch(segs []string) *Response {
 	method := c.req.Method

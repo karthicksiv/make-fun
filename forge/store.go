@@ -70,9 +70,21 @@ type Issue struct {
 	Locked      bool
 	Pull        *Pull
 
-	// cached is the issue's REST JSON, rebuilt after any change (see App.touchIssue).
-	cached atomic.Pointer[[]byte]
+	// cached is the issue's whole GET reply, rendered once and dropped at any change to the issue.
+	cached atomic.Pointer[issueReply]
 }
+
+// issueReply is the stored answer to GET /repos/{owner}/{repo}/issues/{number}: the reply exactly
+// as a keep-alive connection takes it. The event loop writes wire as it stands (fastpath.go); the
+// ordinary path reuses its JSON.
+type issueReply struct {
+	origin string // the origin the reply's URLs name; it only suits a request that dialed that origin
+	head   int    // wire[:head] is the status line and headers, wire[head:] the JSON
+	wire   []byte
+}
+
+// json is the reply's body.
+func (r *issueReply) json() []byte { return r.wire[r.head:] }
 
 type Repo struct {
 	ID            int64
@@ -213,7 +225,10 @@ func tagTarget(data []byte) (SHA, bool) {
 // App is the forge.
 type App struct {
 	token string
-	base  time.Time // the instance's opening time: every timestamp is this plus a tick count
+	// bearer is the Authorization value the suite sends, "Bearer <token>", for the fast paths to
+	// compare against as bytes. It is nil when no token is set, and the fast paths then stand aside.
+	bearer []byte
+	base   time.Time // the instance's opening time: every timestamp is this plus a tick count
 
 	mu        sync.RWMutex
 	viewer    *User
@@ -256,6 +271,9 @@ func newApp(token, trialNow string) *App {
 		nextPullID:    1,
 		nextCommentID: 1,
 		nextLabelID:   1,
+	}
+	if token != "" {
+		a.bearer = []byte("Bearer " + token)
 	}
 	login := envOr("MAKEFUN_FORGE_LOGIN", defaultLogin)
 	a.viewer = a.userLocked(login)

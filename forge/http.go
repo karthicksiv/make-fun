@@ -47,6 +47,8 @@ type Request struct {
 	Body     []byte
 
 	query url.Values
+	// ordinal counts the requests the forge has taken; X-GitHub-Request-Id is derived from it.
+	ordinal uint64
 }
 
 // Query returns the parsed query string.
@@ -227,36 +229,42 @@ func answer(app *App, req *Request, gzipped bool) *Response {
 
 // appendResponse serialises a reply: status line, headers and body in one run of bytes.
 func appendResponse(out []byte, res *Response, keepAlive, headOnly bool) []byte {
+	out = appendReplyHead(out, res.Status, res.ContentType, res.Headers, len(res.Body), keepAlive)
+	if res.Status != 204 && res.Status != 304 && !headOnly {
+		out = append(out, res.Body...)
+	}
+	return out
+}
+
+// appendReplyHead writes a reply's status line and headers, through the blank line that ends them.
+// Every reply the forge sends is framed here, the ones kept ready-made (fastpath.go) included, so a
+// stored reply and a freshly built one are the same bytes.
+func appendReplyHead(out []byte, status int, contentType string, headers []string, bodyLen int, keepAlive bool) []byte {
 	out = append(out, "HTTP/1.1 "...)
-	out = strconv.AppendInt(out, int64(res.Status), 10)
+	out = strconv.AppendInt(out, int64(status), 10)
 	out = append(out, ' ')
-	out = append(out, statusText(res.Status)...)
+	out = append(out, statusText(status)...)
 	out = append(out, "\r\n"...)
-	if res.ContentType != "" {
+	if contentType != "" {
 		out = append(out, "Content-Type: "...)
-		out = append(out, res.ContentType...)
+		out = append(out, contentType...)
 		out = append(out, "\r\n"...)
 	}
-	for i := 0; i+1 < len(res.Headers); i += 2 {
-		out = append(out, res.Headers[i]...)
+	for i := 0; i+1 < len(headers); i += 2 {
+		out = append(out, headers[i]...)
 		out = append(out, ": "...)
-		out = append(out, res.Headers[i+1]...)
+		out = append(out, headers[i+1]...)
 		out = append(out, "\r\n"...)
 	}
-	bodiless := res.Status == 204 || res.Status == 304
-	if !bodiless {
+	if status != 204 && status != 304 {
 		out = append(out, "Content-Length: "...)
-		out = strconv.AppendInt(out, int64(len(res.Body)), 10)
+		out = strconv.AppendInt(out, int64(bodyLen), 10)
 		out = append(out, "\r\n"...)
 	}
 	if !keepAlive {
 		out = append(out, "Connection: close\r\n"...)
 	}
-	out = append(out, "\r\n"...)
-	if !bodiless && !headOnly {
-		out = append(out, res.Body...)
-	}
-	return out
+	return append(out, "\r\n"...)
 }
 
 var continueReply = []byte("HTTP/1.1 100 Continue\r\n\r\n")

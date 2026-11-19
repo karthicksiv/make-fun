@@ -218,6 +218,15 @@ func (l *eventLoop) process(c *loopConn) {
 				break
 			}
 			headEnd := c.scanned + i
+			if wire := l.app.fastIssueGet(c.buf[c.start : c.start+headEnd]); wire != nil {
+				// A stored reply goes out as it stands; the head was never parsed.
+				c.start += headEnd + 4
+				c.scanned = 0
+				if !l.write(c, wire) {
+					return
+				}
+				continue
+			}
 			head := string(c.buf[c.start : c.start+headEnd])
 			c.start += headEnd + 4
 			c.scanned = 0

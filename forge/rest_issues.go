@@ -397,7 +397,9 @@ func (c *rc) issues(repo *Repo, method string, rest []string) *Response {
 			if failure != nil {
 				return failure.res
 			}
-			res := jsonResponse(201, v.issue(repo, issue))
+			// The new issue is rendered once: its JSON answers this request and stays on the
+			// issue as the reply to the GETs that follow.
+			res := &Response{Status: 201, ContentType: jsonType, Body: c.storeIssueReply(repo, issue).json()}
 			return res.setHeader("Location", v.api("/repos/"+repo.FullName()+"/issues/"+strconv.Itoa(issue.Number)))
 		}
 		return nil
@@ -539,24 +541,40 @@ func (c *rc) issues(repo *Repo, method string, rest []string) *Response {
 	return nil
 }
 
-// issueResponse answers GET /issues/{n}, the hottest read there is, from a rendered copy kept on the
-// issue until it next changes. The copy is tied to the origin its URLs name.
+// issueResponse answers GET /issues/{n}, the hottest read there is, from the reply kept on the
+// issue until it next changes. A stored reply is tied to the origin its URLs name.
 func (c *rc) issueResponse(repo *Repo, issue *Issue) *Response {
-	if cached := issue.cached.Load(); cached != nil {
-		body := *cached
-		prefix := len(c.v.base)
-		if len(body) > prefix+1 && string(body[len(body)-prefix:]) == c.v.base {
-			return &Response{Status: 200, ContentType: jsonType, Body: body[:len(body)-prefix-1]}
-		}
+	reply := issue.cached.Load()
+	if reply == nil || reply.origin != c.v.base {
+		reply = c.storeIssueReply(repo, issue)
 	}
-	body := appendJSON(make([]byte, 0, 2048), c.v.issue(repo, issue))
-	// The origin rides behind the JSON, past a NUL, so one slice holds both.
-	stored := make([]byte, 0, len(body)+1+len(c.v.base))
-	stored = append(stored, body...)
-	stored = append(stored, 0)
-	stored = append(stored, c.v.base...)
-	issue.cached.Store(&stored)
-	return &Response{Status: 200, ContentType: jsonType, Body: stored[:len(body)]}
+	return &Response{Status: 200, ContentType: jsonType, Body: reply.json()}
+}
+
+// issueReplyHeadRoom is the space left ahead of an issue's JSON for the reply head, which can only
+// be written once the JSON's length is known.
+const issueReplyHeadRoom = 192
+
+// storeIssueReply renders an issue for the origin this request dialed and keeps the whole GET reply
+// on the issue: the JSON goes straight into the reply's own buffer, and the head is laid in front
+// of it. The head comes from appendReplyHead with the headers a REST reply carries, so the stored
+// bytes are what the ordinary path would send, under the id of the request that rendered them.
+func (c *rc) storeIssueReply(repo *Repo, issue *Issue) *issueReply {
+	buf := make([]byte, issueReplyHeadRoom, issueReplyHeadRoom+2048)
+	buf = appendJSON(buf, c.v.issue(repo, issue))
+	var room [issueReplyHeadRoom]byte
+	headers := [4]string{"X-OAuth-Scopes", oauthScopes, "X-GitHub-Request-Id", requestID(c.req.ordinal)}
+	head := appendReplyHead(room[:0], 200, jsonType, headers[:], len(buf)-issueReplyHeadRoom, true)
+	var wire []byte
+	if len(head) <= issueReplyHeadRoom {
+		wire = buf[issueReplyHeadRoom-len(head):]
+		copy(wire, head)
+	} else {
+		wire = append(head, buf[issueReplyHeadRoom:]...)
+	}
+	reply := &issueReply{origin: c.v.base, head: len(head), wire: wire}
+	issue.cached.Store(reply)
+	return reply
 }
 
 func (c *rc) issueCommentByID(repo *Repo, method string, rest []string) *Response {
