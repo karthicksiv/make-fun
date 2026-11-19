@@ -1788,6 +1788,8 @@ func buildGraphQLSchema() *gqlSchema {
 		} else {
 			ref.issue.UpdatedAt = c.app.now()
 		}
+		// The pull request is an issue to GET /issues/{number}: its stored reply shows the old text.
+		ref.issue.cached.Store(nil)
 		return payload(in, "pullRequest", gIssue{c, ref.repo, ref.issue}), nil
 	})
 	s.attach("Mutation", "mergePullRequest", func(c *gqlExec, p any, args map[string]any) (any, error) {

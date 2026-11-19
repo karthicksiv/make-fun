@@ -9,6 +9,7 @@ import (
 	"compress/zlib"
 	"crypto/sha1"
 	"encoding/binary"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
@@ -160,6 +161,54 @@ func TestPushChainAdvertisesEachTip(t *testing.T) {
 		if o := repo.Objects.Get(hashObject(ObjBlob, blob)); o == nil || !bytes.Equal(o.Data, blob) {
 			t.Fatalf("the blob of push %d is not in the store as pushed", i+1)
 		}
+	}
+}
+
+// A pull request is also an issue to GET /issues/{number}, with a stored reply of its own: a change
+// made to it through GraphQL must show there too.
+func TestPullRequestEditedThroughGraphQLReadsBackAsAnIssue(t *testing.T) {
+	app := forgeWithRepo(t, "pulls")
+	bodies, tips := pushChain(2)
+	push := func(body []byte) {
+		t.Helper()
+		pushed := coldReply(t, app, gitRequest("POST", "/"+defaultLogin+"/pulls.git/git-receive-pack", body))
+		if status(pushed) != "HTTP/1.1 200 OK" || !bytes.Contains(pushed, []byte("ok refs/heads/")) {
+			t.Fatalf("push: %q", pushed)
+		}
+	}
+	push(bodies[0])
+	// The second commit goes to a branch of its own, on top of main.
+	feature := bytes.Replace(bodies[1], []byte(tips[0].String()+" "+tips[1].String()+" refs/heads/main"), []byte(zeroHex+" "+tips[1].String()+" refs/heads/feat"), 1)
+	push(feature)
+	api := "/api/v3/repos/" + defaultLogin + "/pulls"
+	opened := coldReply(t, app, request("POST", api+"/pulls", "forge.test:7100", []string{bearer}, `{"title":"first title","head":"feat","base":"main"}`))
+	if status(opened) != "HTTP/1.1 201 Created" {
+		t.Fatalf("opening the pull request: %s", opened)
+	}
+	var pull struct {
+		Number int    `json:"number"`
+		NodeID string `json:"node_id"`
+	}
+	if err := json.Unmarshal(replyBody(opened), &pull); err != nil || pull.NodeID == "" {
+		t.Fatalf("reading the pull request: %v: %s", err, replyBody(opened))
+	}
+	get := request("GET", api+"/issues/"+strconv.Itoa(pull.Number), "forge.test:7100", []string{bearer}, "")
+	if before := coldReply(t, app, get); !bytes.Contains(before, []byte(`"title":"first title"`)) {
+		t.Fatalf("the pull request does not read back as an issue: %s", before)
+	}
+	if app.fastIssueGet(headOf(get)) == nil {
+		t.Fatalf("reading the pull request as an issue stored no reply")
+	}
+	mutation := `{"query":"mutation { updatePullRequest(input: {pullRequestId: \"` + pull.NodeID + `\", title: \"second title\"}) { pullRequest { title } } }"}`
+	edited := coldReply(t, app, request("POST", "/api/graphql", "forge.test:7100", []string{bearer}, mutation))
+	if !bytes.Contains(edited, []byte(`"title":"second title"`)) {
+		t.Fatalf("the GraphQL edit: %s", edited)
+	}
+	if stale := app.fastIssueGet(headOf(get)); stale != nil {
+		t.Fatalf("the stored reply outlived the GraphQL edit: %s", replyBody(stale))
+	}
+	if after := coldReply(t, app, get); !bytes.Contains(after, []byte(`"title":"second title"`)) {
+		t.Fatalf("the edit does not show on the issue: %s", after)
 	}
 }
 

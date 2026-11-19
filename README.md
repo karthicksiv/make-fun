@@ -22,7 +22,8 @@ That serves the forge on port 7100 with `secret` as the bearer token. In a trial
 | `bin/forge` | The committed Linux amd64 binary, built from `forge/` |
 | `forge/main.go` | Lifecycle: listen, register with the suite, poll until done |
 | `forge/http.go` | The HTTP edge: one request/response pair the rest is written against, and the HTTP/1.1 wire format |
-| `forge/eventloop.go` | The server: one epoll thread, non-blocking sockets, asleep in epoll between requests |
+| `forge/eventloop.go` | The server: one epoll loop pinned to its thread, non-blocking sockets, asleep in epoll between requests |
+| `forge/fastpath.go`, `issuetemplate.go` | The hot requests answered from the raw request bytes: an issue's stored reply, an issue create, a one-ref push advertisement. Anything but the plain case falls through to the ordinary path |
 | `forge/gitobj.go`, `pack.go`, `pktline.go` | Git objects, the pack format (deltas included) and pkt-line framing |
 | `forge/githttp.go` | Smart HTTP: ref advertisement, upload-pack v0/v2 with shallow fetches, receive-pack |
 | `forge/store.go`, `treeops.go` | The in-memory store, commits made by the API, diffs and three-way merges |
@@ -47,6 +48,14 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflag
 ```
 
 The binary has no dependency beyond the Go standard library, and nothing is installed at run time.
+
+## Test
+
+```sh
+go test ./forge
+```
+
+The tests hold each fast path to the ordinary path's bytes, read packs with every kind of entry and every kind of damage, and pin the git capability strings (checking them against a local `git` when there is one). `go test -bench . ./forge` measures what the forge itself spends on each timed operation.
 
 ---
 
