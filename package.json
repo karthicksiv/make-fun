@@ -1,0 +1,15 @@
+{
+  "name": "makefun-git-forge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A GitHub-compatible git forge in one static Go binary: git smart HTTP, REST v3, GraphQL v4 and MCP, all state in memory",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o bin/forge ./forge",
+    "start": "node main.ts"
+  }
+}
