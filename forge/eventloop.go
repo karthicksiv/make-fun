@@ -1,8 +1,8 @@
 package main
 
-// The event loop: every connection served by one thread over epoll, with non-blocking sockets and
+// The event loop: every connection served by one goroutine over epoll, with non-blocking sockets and
 // requests answered inline. A request costs one readiness report, one read and one write, and no
-// goroutine is scheduled on the way.
+// goroutine is woken on the way.
 //
 // While requests keep arriving the loop polls instead of sleeping: for a bounded window after the
 // last request it asks epoll with a zero timeout, so the next request is picked up without waiting
@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"runtime"
 	"syscall"
 	"time"
 	"unsafe"
@@ -25,10 +24,10 @@ const (
 	// hotWindow is how long after the last request the loop keeps polling before it sleeps.
 	hotWindow = 10 * time.Millisecond
 	// A gap this long between two polls means the thread was not running.
-	stallGap = 2 * time.Millisecond
+	stallGap = 3 * time.Millisecond
 	// This many stalls inside stallSpan switch polling off for stallCooldown.
-	stallLimit    = 2
-	stallSpan     = 250 * time.Millisecond
+	stallLimit    = 3
+	stallSpan     = 350 * time.Millisecond
 	stallCooldown = time.Second
 
 	connBufferBytes = 8 << 10
@@ -113,9 +112,10 @@ func (l *eventLoop) poll() int {
 	return int(n)
 }
 
-// run serves forever.
+// run serves forever. It deliberately does not pin itself to an OS thread: nothing here depends on
+// which thread runs it, and an unpinned goroutine is rescheduled without a thread hand-off when the
+// runtime preempts it.
 func (l *eventLoop) run() {
-	runtime.LockOSThread()
 	var hotUntil, coolUntil, lastIdle, spanStart time.Duration
 	stalls := 0
 	begin := time.Now()
