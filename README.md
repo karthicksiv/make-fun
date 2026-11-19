@@ -21,7 +21,8 @@ That serves the forge on port 7100 with `secret` as the bearer token. In a trial
 | `main.ts` | The entrypoint: starts `bin/forge`, forwards signals, mirrors its exit status |
 | `bin/forge` | The committed Linux amd64 binary, built from `forge/` |
 | `forge/main.go` | Lifecycle: listen, register with the suite, poll until done |
-| `forge/http.go` | The HTTP edge: one request/response pair the rest is written against |
+| `forge/http.go` | The HTTP edge: one request/response pair the rest is written against, and the HTTP/1.1 wire format |
+| `forge/eventloop.go` | The server: one epoll thread, non-blocking sockets, bounded busy-polling between requests |
 | `forge/gitobj.go`, `pack.go`, `pktline.go` | Git objects, the pack format (deltas included) and pkt-line framing |
 | `forge/githttp.go` | Smart HTTP: ref advertisement, upload-pack v0/v2 with shallow fetches, receive-pack |
 | `forge/store.go`, `treeops.go` | The in-memory store, commits made by the API, diffs and three-way merges |

@@ -6,6 +6,7 @@ package main
 //	MAKEFUN_SHOP_TOKEN  the bearer token every API call must present
 //	MAKEFUN_TRIAL_NOW   the instance's opening time; every timestamp the forge writes derives from it
 //	FORGE_ADDR          (development) a fixed listen address such as 127.0.0.1:7100
+//	FORGE_IO            (development) "netpoll" serves with goroutines instead of the event loop
 //
 // Without MAKEFUN_ENV_URL the forge just serves, which is how the kit's local runner drives it.
 
@@ -51,12 +52,25 @@ func main() {
 	port := listener.Addr().(*net.TCPAddr).Port
 	fmt.Fprintf(os.Stdout, "[forge] listening on port %d\n", port)
 
-	go func() {
-		if err := serve(listener, app); err != nil {
-			fmt.Fprintf(os.Stderr, "[forge] server stopped: %v\n", err)
-			os.Exit(1)
+	// The event loop serves by default; FORGE_IO=netpoll (or a platform without epoll) selects the
+	// plain goroutine-per-connection server instead.
+	var loop *eventLoop
+	if os.Getenv("FORGE_IO") != "netpoll" {
+		loop, err = newEventLoop(listener, app)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[forge] no event loop (%v): serving with goroutines\n", err)
 		}
-	}()
+	}
+	if loop != nil {
+		go loop.run()
+	} else {
+		go func() {
+			if err := serve(listener, app); err != nil {
+				fmt.Fprintf(os.Stderr, "[forge] server stopped: %v\n", err)
+				os.Exit(1)
+			}
+		}()
+	}
 
 	envURL := strings.TrimRight(os.Getenv("MAKEFUN_ENV_URL"), "/")
 	if envURL == "" {

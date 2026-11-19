@@ -302,7 +302,7 @@ func (a *App) handleREST(req *Request, prefix string) *Response {
 	if res == nil {
 		return notFound()
 	}
-	res.Headers = append(res.Headers, "X-GitHub-Media-Type", "github.v3; format=json", "X-OAuth-Scopes", "repo, read:org", "X-Accepted-OAuth-Scopes", "", "X-GitHub-Api-Version-Selected", "2022-11-28")
+	res.Headers = append(res.Headers, "X-OAuth-Scopes", "repo, read:org")
 	return res
 }
 

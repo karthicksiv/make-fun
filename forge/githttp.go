@@ -27,7 +27,7 @@ func gitResponse(status int, contentType string, body []byte) *Response {
 	return &Response{
 		Status:      status,
 		ContentType: contentType,
-		Headers:     []string{"Cache-Control", "no-cache, max-age=0, must-revalidate", "Expires", "Fri, 01 Jan 1980 00:00:00 GMT", "Pragma", "no-cache"},
+		Headers:     []string{"Cache-Control", "no-cache"},
 		Body:        body,
 	}
 }
@@ -217,8 +217,8 @@ func (repo *Repo) plan(fr *fetchRequest, common []SHA) *fetchPlan {
 
 	depth := fr.depth
 	if fr.deepenRel && depth > 0 {
-		// Relative deepening: the new boundary is `depth` commits below the current shallow points.
-		depth = 0
+		// Relative deepening: the new boundary is `depth` commits below the client's shallow points.
+		depth += repo.shallowLevel(fr.wants, clientShallow)
 	}
 
 	type queued struct {
@@ -272,6 +272,13 @@ func (repo *Repo) plan(fr *fetchRequest, common []SHA) *fetchPlan {
 		seenCommit[item.id] = item.depth
 		if have[item.id] && !clientShallow[item.id] {
 			boundary = append(boundary, item.id)
+			// A client with complete history needs nothing below a commit it has. A shallow client's
+			// history is cut somewhere below: walk on through what it has to reach that cut.
+			if len(clientShallow) > 0 && (depth == 0 || item.depth < depth) {
+				for _, parent := range c.Parents {
+					queue = append(queue, queued{parent, item.depth + 1})
+				}
+			}
 			continue
 		}
 		if !revisit {
@@ -326,6 +333,32 @@ func (repo *Repo) plan(fr *fetchRequest, common []SHA) *fetchPlan {
 	sortSHAs(p.unshallow)
 	p.objects = order
 	return p
+}
+
+// shallowLevel finds how deep the client's history already goes: the largest number of commits on a
+// path from a want down to one of its shallow commits (the want itself counting as one).
+func (repo *Repo) shallowLevel(wants []SHA, shallow map[SHA]bool) int {
+	deepest := 0
+	seen := map[SHA]bool{}
+	level := append([]SHA(nil), wants...)
+	for depth := 1; len(level) > 0; depth++ {
+		var next []SHA
+		for _, id := range level {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			if shallow[id] {
+				deepest = depth
+				continue
+			}
+			if c := repo.Objects.Get(repo.peel(id)).AsCommit(); c != nil {
+				next = append(next, c.Parents...)
+			}
+		}
+		level = next
+	}
+	return deepest
 }
 
 func sortSHAs(ids []SHA) {
@@ -480,7 +513,12 @@ func uploadPackV0(repo *Repo, body []byte) []byte {
 		}
 	}
 	if !fr.done {
-		// The client is still negotiating: say what is common and wait for its next round.
+		// The client is still negotiating. A round that offered no commits (the first round of a
+		// shallow fetch asks only for the shallow list) gets no acknowledgment at all.
+		if len(fr.haves) == 0 {
+			return out
+		}
+		// Otherwise say what is common and wait for the next round.
 		if !detailed && !multi && len(common) > 0 {
 			return pktLine(out, "ACK "+common[0].String()+"\n")
 		}
